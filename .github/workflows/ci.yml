@@ -114,21 +114,19 @@ jobs:
       - name: Fetch QEMU kernel/rootfs
         run: |
           chmod +x scripts/fetch-qemu-kernel.sh
-          # Direct kernel download from Alpine packages (tar.gz format)
+          # Docker-based kernel extraction (ARM64 Alpine) - most reliable
           if [ ! -f build/kernel/Image ]; then
             mkdir -p build/kernel/dtb
-            KURL="https://dl-cdn.alpinelinux.org/alpine/v3.21/main/aarch64/linux-lts-6.6.63-r0.apk"
-            echo "Downloading Alpine kernel from $KURL ..."
-            if curl -sfL --max-time 120 "$KURL" -o /tmp/linux-lts.apk 2>/dev/null; then
-              echo "Extracting kernel..."
-              tar xzf /tmp/linux-lts.apk -C /tmp/linux-lts-extract 2>/dev/null
-              find /tmp/linux-lts-extract -name vmlinuz-lts -exec cp {} build/kernel/Image \;
-              find /tmp/linux-lts-extract -type d -name dtbs-lts -exec cp -r {}/. build/kernel/dtb/ \; 2>/dev/null || true
-              rm -rf /tmp/linux-lts-extract /tmp/linux-lts.apk
-              ls -lh build/kernel/Image 2>/dev/null && echo "Kernel OK" || echo "Kernel MISSING"
-            else
-              echo "Direct Alpine download failed, trying fetch script fallbacks..."
-            fi
+            echo "Extracting aarch64 kernel via Docker Alpine..."
+            docker run --platform linux/arm64 --rm \
+              -v "$PWD/build/kernel:/out" \
+              alpine:3.21 sh -c '
+                apk add --no-cache linux-lts 2>/dev/null && \
+                cp /boot/vmlinuz-lts /out/Image 2>/dev/null && \
+                cp -r /boot/dtbs-lts /out/dtb/ 2>/dev/null || true
+                echo "done"
+              ' 2>/dev/null && echo "Kernel extracted OK" || echo "Docker kernel extraction failed"
+            ls -lh build/kernel/Image 2>/dev/null || true
           fi
           # Run standard fetch for UEFI + rootfs
           ./scripts/fetch-qemu-kernel.sh build
