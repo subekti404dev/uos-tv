@@ -100,8 +100,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            qemu-system-aarch64 qemu-utils genext2fs curl file \
-            7zip bsdtar
+            qemu-system-aarch64 qemu-utils genext2fs curl file
 
       - name: Download ARM64 binaries
         uses: actions/download-artifact@v4
@@ -115,6 +114,23 @@ jobs:
       - name: Fetch QEMU kernel/rootfs
         run: |
           chmod +x scripts/fetch-qemu-kernel.sh
+          # Direct kernel download from Alpine packages (tar.gz format)
+          if [ ! -f build/kernel/Image ]; then
+            mkdir -p build/kernel/dtb
+            KURL="https://dl-cdn.alpinelinux.org/alpine/v3.21/main/aarch64/linux-lts-6.6.63-r0.apk"
+            echo "Downloading Alpine kernel from $KURL ..."
+            if curl -sfL --max-time 120 "$KURL" -o /tmp/linux-lts.apk 2>/dev/null; then
+              echo "Extracting kernel..."
+              tar xzf /tmp/linux-lts.apk -C /tmp/linux-lts-extract 2>/dev/null
+              find /tmp/linux-lts-extract -name vmlinuz-lts -exec cp {} build/kernel/Image \;
+              find /tmp/linux-lts-extract -type d -name dtbs-lts -exec cp -r {}/. build/kernel/dtb/ \; 2>/dev/null || true
+              rm -rf /tmp/linux-lts-extract /tmp/linux-lts.apk
+              ls -lh build/kernel/Image 2>/dev/null && echo "Kernel OK" || echo "Kernel MISSING"
+            else
+              echo "Direct Alpine download failed, trying fetch script fallbacks..."
+            fi
+          fi
+          # Run standard fetch for UEFI + rootfs
           ./scripts/fetch-qemu-kernel.sh build
 
       - name: Prepare Alpine rootfs with UOS overlay
