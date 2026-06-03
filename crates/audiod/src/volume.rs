@@ -107,8 +107,9 @@ impl VolumeController {
                 let _ = selem.set_playback_switch_all(if self.muted { 0 } else { 1 });
 
                 // Map 0..100 → ALSA raw range
-                if let Ok((min, max)) = selem.get_playback_volume_range() {
-                    let raw = min + (long_vol * (max - min) as i64 / 100);
+                if let Ok(range) = selem.get_playback_volume_range() {
+                    let (min, max) = range;
+                    let raw = min + (long_vol * (max - min) / 100);
                     let _ = selem.set_playback_volume_all(raw);
                 }
             }
@@ -134,14 +135,12 @@ impl VolumeController {
     #[cfg(target_os = "linux")]
     pub fn cards(&self) -> Vec<CardInfo> {
         let mut cards = Vec::new();
-        let mut card_idx: i32 = -1;
-
-        while unsafe { alsa::card::ctls!().next(&mut card_idx) }.is_ok() && card_idx >= 0 {
-            if let Ok(name) = alsa::card::Card::new(card_idx).and_then(|c| c.get_name()) {
-                cards.push(CardInfo {
-                    index: card_idx,
-                    name,
-                });
+        for item in alsa::card::Iter::new() {
+            if let Ok(card) = item {
+                let index = card.get_index();
+                if let Ok(name) = card.get_name() {
+                    cards.push(CardInfo { index, name });
+                }
             }
         }
         cards

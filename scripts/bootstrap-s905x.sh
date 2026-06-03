@@ -31,11 +31,29 @@ OUTPUT_DIR="$TARGET_DIR/output"
 
 # S905X identifiers
 SOC="gxl"
-BOARD="p212"
-DTB="meson-gxl-s905x-p212"
 KERNEL_VERSION="6.6"
 UBOOT_VERSION="2024.04"
 ARMBIAN_RELEASE="bookworm"
+
+# ── Board Database ───────────────────────────────────
+# Each board: name, DTB, WiFi chip, RAM, special notes
+# Format: "NAME|DTB|WIFI_CHIP|RAM|NOTES"
+declare -A BOARD_DB
+while IFS='|' read -r _name _dtb _wifi _ram _notes; do
+    [[ -z "$_name" || "$_name" == \#* ]] && continue
+    BOARD_DB["${_name,,}"]="$_dtb|$_wifi|$_ram|$_notes"
+done << 'BOARDS'
+# name     | dtb                        | wifi_chip    | ram | notes
+B860H       | meson-gxl-s905x-p212       | rtl8189es    | 2GB | ZTE B860H v1.1/v2.1, S905X-B, meson-ir
+HG680P      | meson-gxl-s905x-p212       | rtl8189fs    | 2GB | HG680P, S905X, RTL8189FS variant
+NEXBOX-A95X | meson-gxl-s905x-nexbox-a95x | rtl8723bs   | 2GB | Nexbox A95X
+LIBRETECH-CC| meson-gxl-s905x-libretech-cc| rtl8723bs   | 1GB | Libre Computer La Frite
+KHADAS-VIM  | meson-gxl-s905x-khadas-vim  | broadcom    | 2GB | Khadas VIM
+BOARDS
+
+# Current target (set via --board flag)
+BOARD="${BOARD:-p212}"
+DTB="meson-gxl-s905x-p212"
 
 # GPU: Mali-450 needs:
 #   Kernel:  CONFIG_DRM_LIMA (open-source reverse-engineered driver)
@@ -53,32 +71,35 @@ info() { echo -e "${BLUE}[S905X]${NC} $*"; }
 # ── Compatibility Matrix ──────────────────────────────
 show_compatibility() {
     echo ""
-    echo "╔══════════════════════════════════════════════════════╗"
-    echo "║       UOS TV — Amlogic S905X Compatibility           ║"
-    echo "╠══════════════════════════════════════════════════════╣"
-    echo "║                                                      ║"
-    echo "║  CPU:    Quad Cortex-A53 (ARMv8-A)     ✅ Fully      ║"
-    echo "║          Already target: aarch64-musl   supported     ║"
-    echo "║                                                      ║"
-    echo "║  GPU:    Mali-450 MP3                   ✅ lima      ║"
-    echo "║          OpenGL ES 2.0 via Mesa         Open-source  ║"
-    echo "║          COG/WPE RENDERING WORKS!       driver       ║"
-    echo "║                                                      ║"
-    echo "║  Display: HDMI via meson DRM/KMS        ✅ meson     ║"
-    echo "║          Full KMS/DRM atomic modeset    DRM driver   ║"
-    echo "║                                                      ║"
-    echo "║  RAM:    1-2GB DDR3                     ✅ 512MB+    ║"
-    echo "║          UOS needs ~128MB               More=better  ║"
-    echo "║                                                      ║"
-    echo "║  Storage: eMMC 8-16GB  /  SD Card       ✅ Both      ║"
-    echo "║          We build for SD card first     SD easier    ║"
-    echo "║                                                      ║"
-    echo "║  WiFi:    Varies per box (RTL8723BS,    ⚠️ Check     ║"
-    echo "║           Broadcom, etc). Firmware      Device tree  ║"
-    echo "║           needed in rootfs.             + firmware   ║"
-    echo "║                                                      ║"
-    echo "║  Ethernet: 100Mbps (some GbE)           ✅ meson     ║"
-    echo "╚══════════════════════════════════════════════════════╝"
+    echo "╔════════════════════════════════════════════════════════╗"
+    echo "║       UOS TV — Amlogic S905X Compatibility             ║"
+    echo "╠════════════════════════════════════════════════════════╣"
+    echo "║                                                        ║"
+    echo "║  CPU:    Quad Cortex-A53 (ARMv8-A)       ✅ Fully      ║"
+    echo "║          Already target: aarch64-musl     supported     ║"
+    echo "║                                                        ║"
+    echo "║  GPU:    Mali-450 MP3                     ✅ lima      ║"
+    echo "║          OpenGL ES 2.0 via Mesa           Open-source  ║"
+    echo "║          COG/WPE RENDERING WORKS!         driver       ║"
+    echo "║                                                        ║"
+    echo "║  Display: HDMI via meson DRM/KMS          ✅ meson     ║"
+    echo "║          Full KMS/DRM atomic modeset      DRM driver   ║"
+    echo "║                                                        ║"
+    echo "║  RAM:    1-2GB DDR3                       ✅ 512MB+    ║"
+    echo "║          UOS needs ~128MB                 More=better  ║"
+    echo "║                                                        ║"
+    echo "║  Storage: eMMC 8-16GB  /  SD Card         ✅ Both      ║"
+    echo "║          We build for SD card first       SD easier    ║"
+    echo "║                                                        ║"
+    echo "║  Ethernet: 100Mbps (some GbE)             ✅ meson     ║"
+    echo "╚════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "  Supported STB models:"
+    echo "    ✅ ZTE B860H v1.1/v2.1  — RTL8189ES WiFi, 2GB RAM, meson-ir"
+    echo "    ✅ HG680P                — RTL8189FS WiFi, 2GB RAM"
+    echo "    ✅ Nexbox A95X           — RTL8723BS WiFi, 2GB RAM"
+    echo "    ✅ LibreTech CC          — RTL8723BS WiFi, 1GB RAM"
+    echo "    ✅ Khadas VIM            — Broadcom WiFi, 2GB RAM"
     echo ""
     echo "  ❌ Not supported: S905 (non-X), S905W, S905D"
     echo "  ⚠️  S905X2/S905X3: different SoC (g12a/g12b) — need different DTB"

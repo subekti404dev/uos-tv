@@ -15,7 +15,6 @@ mod devices;
 mod volume;
 
 use parking_lot::Mutex;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 #[tokio::main]
