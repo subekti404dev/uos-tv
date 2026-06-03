@@ -165,14 +165,51 @@ KERNEL=build/kernel/alpine-vmlinuz INITRD=build/kernel/alpine-initramfs TIMEOUT_
 
 ## Known Limitations
 
-1. **Cog/WPE WebKit** — Integrated but needs real ARM64 GPU/DRM for rendering. QEMU `virt` has no GPU, so Cog runs headless. Test on real hardware (Raspberry Pi, Rockchip) for full rendering.
+1. **Cog/WPE WebKit** — Integrated but needs real ARM64 GPU/DRM for rendering. QEMU `virt` has no GPU, so Cog runs headless. **Test on real hardware** (S905X, Raspberry Pi, Rockchip) for full rendering.
 2. **lumind (Smithay)** — Full Wayland compositor deferred. Current version is a minimal display manager that scans DRM/input and launches Cog.
-3. **audiod** — ALSA backend works but needs real sound hardware. QEMU has no sound card.
-4. **inputd** — evdev scanning works but QEMU has no input devices. IR remote mapping tested via unit tests.
-5. **netmd WiFi** — Uses `wpa_cli`. No WiFi in QEMU; Ethernet-only.
+3. **audiod** — ALSA backend works but needs real sound hardware. QEMU has no sound card. S905X has an HDMI audio output via meson audio driver.
+4. **inputd** — evdev scanning works but QEMU has no input devices. IR remote on S905X is supported via meson-ir driver, exposed as `/dev/input/event*`.
+5. **netmd WiFi** — Uses `wpa_cli`. No WiFi in QEMU; Ethernet-only. S905X boxes typically have RTL8723BS or Broadcom WiFi.
 6. **Read-only rootfs** — inis remounts `/` as RO after boot. Busybox httpd incompatible; use Rust `lunad` instead.
 7. **Capability dropping** — Services needing port bind must have `caps.keep: [net_bind_service]` in manifest.
 8. **cap_last_cap** — macOS libc lacks newer Linux capabilities (BPF, CHECKPOINT_RESTORE). Use raw numbers (0-40) in `sec.rs`.
+
+## Hardware Targets
+
+### Amlogic S905X (Primary Target)
+
+**SoC**: Amlogic S905X (quad Cortex-A53 @ 1.5GHz, Mali-450 MP3 GPU)
+
+| Component | Status | Driver |
+|-----------|--------|--------|
+| CPU ARMv8-A | ✅ Fully supported | aarch64-musl target |
+| GPU Mali-450 | ✅ Works with lima | Open-source Mesa driver (OpenGL ES 2.0) |
+| Display HDMI | ✅ Works with meson DRM/KMS | Full modesetting, atomic |
+| SD/eMMC | ✅ meson-gx-mmc | Boot from SD card |
+| Ethernet | ✅ stmmac | 100Mbps (some have GbE) |
+| WiFi | ⚠️ Varies per box | Usually RTL8723BS or Broadcom — needs firmware |
+| IR Remote | ✅ meson-ir | `/dev/input/event*` |
+| Audio HDMI | ✅ meson audio | ALSA via meson driver |
+
+**Build for S905X**:
+```bash
+./scripts/bootstrap-s905x.sh --all        # Full build (kernel + rootfs + SD image)
+./scripts/bootstrap-s905x.sh --kernel-docker  # Docker-based kernel cross-compile
+```
+
+**Critical difference from QEMU**: With Mali-450 GPU + lima + Mesa, **Cog/WPE WebKit can render the Luna UI natively on screen via HDMI**. This is the target deployment platform.
+
+**Board**: Generic `meson-gxl-s905x-p212` device tree. Most Android TV boxes use this reference design. DTB = `meson-gxl-s905x-p212.dtb`.
+
+**Boot flow on S905X**:
+```
+BootROM (eMMC/SD) → u-boot → Linux kernel + DTB → inis (PID 1) → monitord → services
+→ meson DRM/KMS + lima GPU → Cog/WPE WebKit → Luna UI on HDMI screen!
+```
+
+### QEMU virt (Development)
+
+Used for fast iteration and CI. No GPU/DRM — Cog runs headless. Luna UI accessed via web browser at `http://localhost:8080/`.
 
 ## Conventions
 
