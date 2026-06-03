@@ -107,11 +107,9 @@ impl VolumeController {
                 let _ = selem.set_playback_switch_all(if self.muted { 0 } else { 1 });
 
                 // Map 0..100 → ALSA raw range
-                if let Ok(range) = selem.get_playback_volume_range() {
-                    let (min, max) = range;
-                    let raw = min + (long_vol * (max - min) / 100);
-                    let _ = selem.set_playback_volume_all(raw);
-                }
+                let (min, max) = selem.get_playback_volume_range();
+                let raw = min + (long_vol * (max - min) / 100);
+                let _ = selem.set_playback_volume_all(raw);
             }
         }
 
