@@ -161,13 +161,13 @@ impl BundleVerifier {
         }
 
         // 4. Version check
-        if let Some(current) = current_version {
-            if is_downgrade(current, &meta.version) {
-                return Err(Error::Downgrade {
-                    version: meta.version.clone(),
-                    current: current.to_string(),
-                });
-            }
+        if let Some(current) = current_version
+            && is_downgrade(current, &meta.version)
+        {
+            return Err(Error::Downgrade {
+                version: meta.version.clone(),
+                current: current.to_string(),
+            });
         }
 
         // 5. Timestamp check
