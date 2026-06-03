@@ -1,0 +1,12 @@
+name: logd
+description: "Centralized logging daemon"
+binary: /usr/bin/logd
+args: []
+dependencies: []
+restart: always
+restart_delay_ms: 500
+max_crash_count: 5
+crash_window_secs: 30
+critical: false
+startup_timeout_secs: 5
+health_check: stardust.logd.ping

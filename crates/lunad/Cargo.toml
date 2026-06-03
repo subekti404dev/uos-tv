@@ -1,0 +1,13 @@
+[package]
+name = "lunad"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "lunad"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

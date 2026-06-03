@@ -1,0 +1,15 @@
+name: netmd
+description: "Network manager — WiFi, Ethernet, connectivity"
+binary: /usr/bin/netmd
+dependencies:
+  - stardust
+after:
+  - lumind
+restart: always
+critical: false
+startup_timeout_secs: 10
+health_check: stardust.netmd.ping
+caps:
+  keep:
+    - net_admin
+    - net_raw

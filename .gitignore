@@ -1,0 +1,43 @@
+# === Rust Build Artifacts ===
+target/
+**/*.rs.bk
+*.pdb
+
+# === Build Output (generated disk images, kernels, rootfs) ===
+build/
+*.img
+*.img.gz
+*.qcow2
+*.raw
+*.iso
+
+# === QEMU Logs & Temp ===
+qemu.log
+qemu-*.log
+/tmp/qemu-*.log
+*.tmp
+
+# === Docker ===
+*.tar
+docker-*.tar
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === OS ===
+.DS_Store
+.AppleDouble
+Thumbs.db
+
+# === Environment ===
+.env
+.env.local
+.env.*.local
+
+# === Misc ===
+*.bak
+*.orig

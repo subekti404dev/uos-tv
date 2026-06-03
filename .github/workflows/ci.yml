@@ -1,0 +1,138 @@
+name: UOS TV CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+concurrency:
+  group: uos-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust fmt, clippy, tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        # Keep warnings visible without blocking CI; project still has known non-critical warnings.
+        run: cargo clippy --workspace --all-targets
+
+      - name: Test workspace
+        run: cargo test --workspace
+
+  cross-build:
+    name: Docker ARM64 cross-build
+    runs-on: ubuntu-24.04
+    needs: rust
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build cross-compilation image
+        run: docker build -t uos-builder -f Dockerfile.cross .
+
+      - name: Cross-build workspace
+        run: |
+          docker run --rm -v "$PWD:/work" uos-builder \
+            cargo build --release --target aarch64-unknown-linux-musl --workspace
+
+      - name: List ARM64 binaries
+        run: |
+          file target/aarch64-unknown-linux-musl/release/* || true
+          find target/aarch64-unknown-linux-musl/release -maxdepth 1 -type f -executable -print
+
+      - name: Upload ARM64 binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: uos-arm64-binaries
+          path: |
+            target/aarch64-unknown-linux-musl/release/audiod
+            target/aarch64-unknown-linux-musl/release/devmand
+            target/aarch64-unknown-linux-musl/release/dispald
+            target/aarch64-unknown-linux-musl/release/inis
+            target/aarch64-unknown-linux-musl/release/inputd
+            target/aarch64-unknown-linux-musl/release/logd
+            target/aarch64-unknown-linux-musl/release/lumind
+            target/aarch64-unknown-linux-musl/release/lunad
+            target/aarch64-unknown-linux-musl/release/monitord
+            target/aarch64-unknown-linux-musl/release/netmd
+            target/aarch64-unknown-linux-musl/release/notifd
+            target/aarch64-unknown-linux-musl/release/otad
+            target/aarch64-unknown-linux-musl/release/pkgd
+            target/aarch64-unknown-linux-musl/release/powermand
+            target/aarch64-unknown-linux-musl/release/stardustd
+          if-no-files-found: error
+          retention-days: 7
+
+  qemu-smoke:
+    name: QEMU boot smoke test
+    runs-on: ubuntu-24.04
+    needs: cross-build
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install QEMU/image tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-aarch64 qemu-utils genext2fs curl file
+
+      - name: Download ARM64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: uos-arm64-binaries
+          path: target/aarch64-unknown-linux-musl/release
+
+      - name: Make binaries executable
+        run: chmod +x target/aarch64-unknown-linux-musl/release/*
+
+      - name: Fetch QEMU kernel/rootfs
+        run: |
+          chmod +x scripts/fetch-qemu-kernel.sh
+          ./scripts/fetch-qemu-kernel.sh build
+
+      - name: Prepare Alpine rootfs with UOS overlay
+        run: |
+          chmod +x scripts/overlay-alpine.sh
+          if [ ! -d build/alpine-rootfs/etc ]; then
+            mkdir -p build/alpine-rootfs
+            tar xzf build/alpine-rootfs/alpine-rootfs.tar.gz -C build/alpine-rootfs
+          fi
+          ./scripts/overlay-alpine.sh build/alpine-rootfs
+          cp -a build/alpine-rootfs build/alpine-rootfs-extracted
+
+      - name: QEMU smoke test
+        run: |
+          chmod +x scripts/ci-qemu-smoke.sh
+          TIMEOUT_SECS=45 MIN_SERVICES=12 ./scripts/ci-qemu-smoke.sh
+
+      - name: Upload QEMU log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-smoke-log
+          path: build/qemu-smoke.log
+          if-no-files-found: ignore
+          retention-days: 7

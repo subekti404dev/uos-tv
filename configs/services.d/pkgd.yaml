@@ -1,0 +1,12 @@
+name: pkgd
+description: "Package manager — app install, update, remove"
+binary: /usr/bin/pkgd
+env:
+  - "UOS_APPS_DIR=/data/apps"
+dependencies:
+  - stardust
+after:
+  - netmd
+restart: on-failure
+critical: false
+startup_timeout_secs: 8

@@ -1,0 +1,27 @@
+[package]
+name = "otad"
+version = "0.1.0"
+edition = "2024"
+description = "UOS TV OTA Update Daemon — automatic system updates"
+
+[[bin]]
+name = "otad"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true, features = ["full"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+thiserror = { workspace = true }
+reqwest = { workspace = true }
+nix = { workspace = true, features = ["fs", "hostname", "mount", "process", "signal", "ioctl", "reboot"] }
+stardust = { path = "../stardust" }
+rauc-rs = { path = "../rauc-rs" }
+casync-rs = { path = "../casync-rs" }
+update-verify = { path = "../update-verify" }
+clap = { workspace = true, features = ["derive"] }
+hex = "0.4"
+sha2 = "0.10"

@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UOS TV — PRD: Sistem Operasi TV Berbasis WebOS + Armbian + Rust</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #f78166;
+    --green: #3fb950;
+    --blue: #58a6ff;
+    --purple: #bc8cff;
+    --orange: #d2991d;
+    --red: #f85149;
+    --code-bg: #0d1117;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    line-height: 1.7;
+    padding: 0;
+  }
+
+  /* ── Header ── */
+  .hero {
+    background: linear-gradient(135deg, #0d1117 0%, #1a1f35 40%, #1a1030 100%);
+    border-bottom: 2px solid var(--border);
+    padding: 80px 40px;
+    text-align: center;
+  }
+  .hero h1 {
+    font-size: 3.2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent), var(--purple), var(--blue));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 16px;
+  }
+  .hero .subtitle {
+    font-size: 1.25rem;
+    color: var(--text-dim);
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  .hero .badges {
+    margin-top: 24px;
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .badge {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .badge.rust { color: var(--accent); border-color: rgba(247,129,102,.4); }
+  .badge.armbian { color: var(--green); border-color: rgba(63,185,80,.4); }
+  .badge.webos { color: var(--blue); border-color: rgba(88,166,255,.4); }
+  .badge.qemu { color: var(--purple); border-color: rgba(188,140,255,.4); }
+  .badge.ota { color: var(--orange); border-color: rgba(210,153,29,.4); }
+
+  /* ── Container ── */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px;
+  }
+
+  /* ── TOC ── */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 32px;
+    margin-bottom: 48px;
+  }
+  .toc h2 { font-size: 1.2rem; color: var(--text-dim); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .toc ol { list-style: none; counter-reset: toc; }
+  .toc li { counter-increment: toc; margin-bottom: 6px; }
+  .toc li::before { content: counter(toc, decimal-leading-zero); color: var(--accent); font-weight: 700; font-size: 0.8rem; margin-right: 12px; }
+  .toc a { color: var(--blue); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  /* ── Sections ── */
+  section {
+    margin-bottom: 56px;
+    scroll-margin-top: 40px;
+  }
+  section h2 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  section h2 .sec-num {
+    color: var(--accent);
+    font-size: 1rem;
+    margin-right: 10px;
+  }
+  section h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 28px 0 10px;
+    color: var(--blue);
+  }
+  section h4 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 20px 0 8px;
+    color: var(--purple);
+  }
+
+  p { margin-bottom: 14px; color: var(--text-dim); }
+  strong { color: var(--text); }
+
+  ul, ol {
+    margin: 0 0 16px 24px;
+    color: var(--text-dim);
+  }
+  li { margin-bottom: 6px; }
+
+  /* ── Code ── */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    overflow-x: auto;
+    font-size: 0.88rem;
+    line-height: 1.6;
+    margin: 16px 0 24px;
+  }
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  }
+  :not(pre) > code {
+    background: var(--surface);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    color: var(--accent);
+    border: 1px solid var(--border);
+  }
+
+  /* ── Cards ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin: 20px 0;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+  }
+  .card h4 { margin-top: 0; color: var(--accent); }
+  .card p { font-size: 0.92rem; margin-bottom: 0; }
+
+  /* ── Architecture Diagram ── */
+  .arch-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    margin: 20px 0 32px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text);
+  }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 24px;
+    font-size: 0.92rem;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    background: var(--surface);
+    color: var(--blue);
+    font-weight: 600;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  td { color: var(--text-dim); }
+  tr:hover td { background: rgba(88,166,255,.04); }
+
+  /* ── Phase timeline ── */
+  .timeline {
+    position: relative;
+    padding-left: 30px;
+    border-left: 2px solid var(--border);
+    margin: 24px 0;
+  }
+  .timeline-item {
+    position: relative;
+    margin-bottom: 28px;
+    padding-left: 24px;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -37px;
+    top: 4px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    background: var(--bg);
+  }
+  .timeline-item h4 { margin-top: 0; }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 24px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .hero { padding: 50px 20px; }
+    .hero h1 { font-size: 2rem; }
+    .container { padding: 24px 16px; }
+    .arch-diagram { font-size: 0.7rem; padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  HERO                                         -->
+<!-- ════════════════════════════════════════════ -->
+<header class="hero">
+  <h1>UOS TV</h1>
+  <p class="subtitle">
+    Sistem Operasi TV Cerdas berbasis Armbian + Web Runtime &mdash;
+    Seluruh komponen sistem ditulis dalam <strong>Rust</strong>, 
+    mendukung <strong>OTA Update</strong> atomik, dan 
+    dapat dijalankan penuh di <strong>QEMU</strong> untuk pengembangan.
+  </p>
+  <div class="badges">
+    <span class="badge rust">🦀 Rust</span>
+    <span class="badge armbian">🍊 Armbian</span>
+    <span class="badge webos">📺 WebOS-style</span>
+    <span class="badge qemu">💻 QEMU</span>
+    <span class="badge ota">🔄 OTA Update</span>
+  </div>
+</header>
+
+<div class="container">
+
+<!-- ════════════════════════════════════════════ -->
+<!--  DAFTAR ISI                                  -->
+<!-- ════════════════════════════════════════════ -->
+<nav class="toc">
+  <h2>Daftar Isi</h2>
+  <ol>
+    <li><a href="#visi">Visi, Misi &amp; Tujuan Produk</a></li>
+    <li><a href="#arsitektur">Arsitektur Sistem</a></li>
+    <li><a href="#kompositor">Kompositor &amp; Web Runtime</a></li>
+    <li><a href="#system-services">System Services (Rust)</a></li>
+    <li><a href="#ota">OTA Update System</a></li>
+    <li><a href="#fs">Struktur Filesystem</a></li>
+    <li><a href="#boot">Boot Process</a></li>
+    <li><a href="#qemu">QEMU Development &amp; Testing</a></li>
+    <li><a href="#build">Build &amp; Toolchain</a></li>
+    <li><a href="#timeline">Roadmap &amp; Timeline Pengembangan</a></li>
+    <li><a href="#risk">Risiko &amp; Mitigasi</a></li>
+    <li><a href="#appendices">Appendices</a></li>
+  </ol>
+</nav>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  1. VISI                                     -->
+<!-- ════════════════════════════════════════════ -->
+<section id="visi">
+  <h2><span class="sec-num">01</span> Visi, Misi &amp; Tujuan Produk</h2>
+
+  <h3>Visi</h3>
+  <p>
+    Menjadi sistem operasi TV <strong>open-source</strong> paling ringan, aman, dan <em>developer-friendly</em> 
+    untuk perangkat ARM — dari TV Box konsumen hingga panel signage komersial.
+  </p>
+
+  <h3>Misi</h3>
+  <ul>
+    <li>Menyediakan pengalaman TV cerdas lengkap dengan UI berbasis web (HTML/CSS/JS) 
+        seperti webOS, namun dengan footprint RAM &lt; 256 MB saat idle.</li>
+    <li>Menggunakan <strong>Rust</strong> untuk seluruh system services — menjamin memory safety 
+        dan zero-cost abstractions tanpa garbage collector.</li>
+    <li>Mendukung <strong>OTA update dual-slot A/B</strong> yang atomik dan rollback-safe, 
+        cocok untuk deployment di perangkat konsumen jarak jauh.</li>
+    <li>Dapat di-<em>build</em> dan dijalankan di <strong>QEMU</strong> (aarch64) 
+        dalam satu perintah — memangkas feedback loop pengembangan.</li>
+  </ul>
+
+  <h3>Target Perangkat</h3>
+  <table>
+    <tr><th>Kelas</th><th>SoC</th><th>RAM</th><th>Storage</th><th>Contoh Perangkat</th></tr>
+    <tr><td>Entry</td><td>Amlogic S905X / Rockchip RK3328</td><td>1-2 GB</td><td>8 GB eMMC</td><td>X96 Mini, Tanix TX3</td></tr>
+    <tr><td>Mid</td><td>Rockchip RK3566 / RK3568</td><td>2-4 GB</td><td>16-32 GB eMMC</td><td>Radxa ROCK 3A, Orange Pi</td></tr>
+    <tr><td>High</td><td>Rockchip RK3588 / Amlogic S928X</td><td>4-8 GB</td><td>32-128 GB eMMC/NVMe</td><td>ROCK 5B, Khadas VIM4</td></tr>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  2. ARSITEKTUR                                -->
+<!-- ════════════════════════════════════════════ -->
+<section id="arsitektur">
+  <h2><span class="sec-num">02</span> Arsitektur Sistem</h2>
+
+  <p>
+    UOS TV menggunakan arsitektur <strong>layered</strong> dengan pemisahan tegas antara 
+    kernel, system services Rust, web runtime, dan UI shell. Setiap layer hanya 
+    berkomunikasi via IPC — tidak ada shared mutable state antar service.
+  </p>
+
+  <div class="arch-diagram">
+┌──────────────────────────────────────────────────────────────┐
+│                     UI SHELL LAYER                           │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  Luna Shell (HTML/CSS/JS)                              │ │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │ │
+│  │  │ Home     │ │ App      │ │ Settings │ │ OTA UI   │  │ │
+│  │  │ Launcher │ │ Store    │ │ Panel    │ │ Updater  │  │ │
+│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘  │ │
+│  └────────────────────────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────────────┤
+│                 WEB RUNTIME LAYER                            │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  WPE WebKit (libwpe, libwpebackend-fdo)                │ │
+│  │  ┌─────────────┐ ┌──────────────┐ ┌────────────────┐  │ │
+│  │  │ HTML5 Video │ │ WebGL 2.0    │ │ MSE / EME      │  │ │
+│  │  │ Pipeline    │ │ (ANGLE/Gles) │ │ (DRM playback) │  │ │
+│  │  └─────────────┘ └──────────────┘ └────────────────┘  │ │
+│  └────────────────────────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────────────┤
+│                 COMPOSITOR LAYER                             │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  🌙 Lumin Compositor (Rust + Smithay)                  │ │
+│  │  ┌─────────────┐ ┌──────────┐ ┌──────────────────┐    │ │
+│  │  │ Wayland     │ │ Scenegra-│ │ Hardware Overlay │    │ │
+│  │  │ Server      │ │ ph API   │ │ Planner (KMS)    │    │ │
+│  │  └─────────────┘ └──────────┘ └──────────────────┘    │ │
+│  └────────────────────────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────────────┤
+│              SYSTEM SERVICES LAYER (Rust)                    │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐  │
+│  │  🌐      │ │  📡       │ │  🎵      │ │  🧩          │  │
+│  │  NetMgr  │ │  OTA      │ │  Audio   │ │  PkgMgr      │  │
+│  │  (netlink│ │  (rauc)   │ │  (pipew.)│ │  (appinst.)  │  │
+│  │  +connm.)│ │           │ │          │ │              │  │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────┘  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐  │
+│  │  ⚙️       │ │  🔌       │ │  📺      │ │  🔔          │  │
+│  │  Device  │ │  Input   │ │  Display │ │  Notif.      │  │
+│  │  Manager │ │  (evdev) │ │  (DRM)   │ │  Bus         │  │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────┘  │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  🚌 IPCs — Stardust Bus (Rust, Unix sockets +       │   │
+│  │     CBOR serialization)                              │   │
+│  └──────────────────────────────────────────────────────┘   │
+├──────────────────────────────────────────────────────────────┤
+│                 ARMBIAN BASE LAYER                           │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  Linux Kernel 6.6 LTS (PREEMPT_RT) + KMS/DRM + V4L2   │ │
+│  │  GPU: Mali Panfrost / Panthor / Lima (open-source)    │ │
+│  │  VPU: Hantro / RKVDEC / V4L2 stateless codecs         │ │
+│  │  Audio: ALSA UCM + PipeWire                            │ │
+│  │  Network: NetworkManager + ModemManager                │ │
+│  │  Storage: eMMC / NVMe / USB with dm-verity             │ │
+│  │  Security: SELinux (permissive → enforcing), dm-verity │ │
+│  └────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
+  </div>
+
+  <h3>Kenapa Rust?</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>🛡️ Memory Safety</h4>
+      <p>Tanpa GC. Tanpa use-after-free. Tanpa data race. Compiler menjamin safety di compile-time — ideal untuk system services yang long-running.</p>
+    </div>
+    <div class="card">
+      <h4>⚡ Zero-Cost Abstractions</h4>
+      <p>Async runtime (tokio), serialization (serde), IPC — semua <em>zero-cost</em>. Performa setara C tanpa risiko.</p>
+    </div>
+    <div class="card">
+      <h4>📦 Cargo Ecosystem</h4>
+      <p>Smithay (Wayland), pipewire-rs, dbus-rs, rauc-rs, netlink-rs — ekosistem Rust siap pakai untuk komponen OS.</p>
+    </div>
+    <div class="card">
+      <h4>🔒 Supply Chain</h4>
+      <p><code>cargo vet</code> + <code>cargo audit</code> + <code>cargo deny</code> — rantai pasok aman, cocok untuk OTA production.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  3. KOMPOSITOR                               -->
+<!-- ════════════════════════════════════════════ -->
+<section id="kompositor">
+  <h2><span class="sec-num">03</span> Kompositor &amp; Web Runtime</h2>
+
+  <h3>Lumin Compositor</h3>
+  <p>
+    Ditulis dalam Rust menggunakan <strong>Smithay</strong> — library Wayland compositor modular. 
+    Lumin bertindak sebagai <em>system compositor</em> yang menjalankan 
+    web runtime (WPE WebKit) sebagai client Wayland tunggal.
+  </p>
+
+  <h4>Fitur Kompositor</h4>
+  <ul>
+    <li><strong>Wayland Server</strong> — kompatibel penuh dengan protokol Wayland 1.22+ 
+        (xdg-shell, wlr-layer-shell, wp-presentation-time, linux-dmabuf, zwp_linux_dmabuf_v1)</li>
+    <li><strong>Hardware Overlay Planner</strong> — memanfaatkan KMS planes hardware untuk 
+        video playback zero-copy (overlay plane terpisah dari primary/RGB plane)</li>
+    <li><strong>Scene Graph API</strong> — API internal untuk animasi UI (transisi 60fps 
+        menggunakan timer page-flip DRM + damage tracking)</li>
+    <li><strong>Multi-layer compositing</strong> — Background → Video → UI → Cursor → OSD</li>
+    <li><strong>HDR Support</strong> — HDR10/HLG via KMS HDR properties (Colorspace, 
+        HDR_OUTPUT_METADATA) pada kernel ≥6.6</li>
+    <li><strong>DRM Lease</strong> — opsional: lease output ke client eksternal (mis. 
+        Kodi, mpv) untuk playback tanpa compositing overhead</li>
+  </ul>
+
+  <h4>Struktur Kode Lumin (Rust)</h4>
+  <pre><code>lumin/
+├── Cargo.toml
+├── src/
+│   ├── main.rs              # Entry point + signal handling
+│   ├── state.rs             # Global compositor state (AnvilState-style)
+│   ├── backend/
+│   │   ├── mod.rs
+│   │   ├── drm.rs           # DRM/KMS backend (gfx + atomic modeset)
+│   │   ├── gbm.rs           # GBM buffer allocation
+│   │   ├── session.rs       # VT switching / logind session
+│   │   └── udev.rs          # Hotplug GPU detection
+│   ├── shell/
+│   │   ├── mod.rs
+│   │   ├── xdg.rs           # XDG shell protocol handler
+│   │   ├── layer.rs         # Layer shell protocol handler
+│   │   └── fullscreen.rs    # Fullscreen surface management
+│   ├── render/
+│   │   ├── mod.rs
+│   │   ├── gl.rs            # OpenGL ES 3.2 rendering
+│   │   ├── vulkan.rs        # Vulkan renderer (opsional)
+│   │   └── damage.rs        # Damage tracking & partial updates
+│   ├── input/
+│   │   ├── mod.rs
+│   │   ├── keyboard.rs      # libinput keyboard handling
+│   │   ├── pointer.rs       # Pointer/touch handling
+│   │   └── remote.rs        # Remote control (IR/Bluetooth)
+│   ├── output/
+│   │   ├── mod.rs
+│   │   ├── mode.rs          # Display mode setting
+│   │   └── hdr.rs           # HDR metadata handling
+│   └── ipc/
+│       ├── mod.rs
+│       └── bus.rs           # Stardust IPC client (komunikasi dgn services)
+├── protocols/               # Wayland protocol XML
+└── build.rs</code></pre>
+
+  <h3>Web Runtime: WPE WebKit</h3>
+  <p>
+    WPE WebKit (<em>Web Platform for Embedded</em>) adalah port WebKit yang dioptimalkan 
+    untuk perangkat embedded. Tidak memerlukan toolkit GUI — langsung render ke 
+    EGL/GLES surface yang disediakan kompositor via Wayland.
+  </p>
+
+  <h4>Custom WPE Backend</h4>
+  <p>
+    Kami menulis backend WPE kustom (<code>libwpebackend-uos</code>) dalam Rust 
+    (via FFI binding ke C API WPE). Backend ini:
+  </p>
+  <ul>
+    <li>Mendaftarkan surface WebKit sebagai <code>wl_surface</code> ke Lumin compositor</li>
+    <li>Mengirimkan input event dari compositor ke WebKit</li>
+    <li>Memanfaatkan <code>linux-dmabuf</code> untuk zero-copy buffer sharing</li>
+    <li>Mengekspos native HTML5 video pipeline via GStreamer + V4L2 (HW decode)</li>
+    <li>DRM (Widevine L3) playback via platform DRM integration</li>
+  </ul>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>🎬 HW Video Decode</h4>
+      <p>V4L2 stateless decoder (H.264/H.265/VP9/AV1) → dmabuf → zero-copy ke KMS overlay plane. Tidak ada salinan memori tambahan sepanjang pipeline video.</p>
+    </div>
+    <div class="card">
+      <h4>🎮 WebGL 2.0</h4>
+      <p>ANGLE backend OpenGL ES 3.2 native. Performa GPU penuh untuk game dan animasi WebGL.</p>
+    </div>
+  </div>
+
+  <h3>Luna UI Shell</h3>
+  <p>
+    Luna adalah UI shell yang berjalan di atas WPE WebKit — 
+    sebuah <strong>Single Page Application (SPA)</strong> berbasis:
+  </p>
+  <table>
+    <tr><th>Komponen</th><th>Teknologi</th><th>Keterangan</th></tr>
+    <tr><td>UI Framework</td><td>Preact + htm (no build step)</td><td>Ultra-ringan (~3KB), tanpa kompilasi</td></tr>
+    <tr><td>Styling</td><td>CSS Custom Properties + 60fps CSS animations</td><td>GPU-accelerated</td></tr>
+    <tr><td>State</td><td>Signals (Preact)</td><td>Reaktivitas granular tanpa virtual DOM diffing berat</td></tr>
+    <tr><td>IPC ke Rust</td><td>JavaScript ↔ Rust bridge via WebKit JSC API</td><td>Method call + event push dua arah</td></tr>
+    <tr><td>App Model</td><td>WAM (Web App Manager) — setiap app = WebView terisolasi</td><td>Isolasi proses per aplikasi</td></tr>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  4. SYSTEM SERVICES                          -->
+<!-- ════════════════════════════════════════════ -->
+<section id="system-services">
+  <h2><span class="sec-num">04</span> System Services (Rust)</h2>
+
+  <p>
+    Setiap service berjalan sebagai proses independen yang diawasi oleh 
+    <strong>monitord</strong> (process supervisor berbasis Rust). Service berkomunikasi 
+    via <strong>Stardust Bus</strong> — IPC pub/sub berbasis Unix domain socket dengan 
+    serialisasi CBOR.
+  </p>
+
+  <h3>Stardust IPC Bus</h3>
+  <pre><code>┌────────────┐    Unix Socket     ┌──────────────┐
+│  Service A │ ──────────────────→ │  Stardustd   │
+│  (Rust)    │   CBOR message      │  (Broker)    │
+└────────────┘                     └──────┬───────┘
+       ▲                                 │
+       │         Unix Socket +           │
+       │         CBOR message            │
+       │    ┌────────────────────────────┘
+       │    ▼
+┌────────────┐
+│  Service B │
+│  (Rust)    │
+└────────────┘</code></pre>
+
+  <h4>Message Format (CBOR)</h4>
+  <pre><code>{
+  "src": "netmgr",
+  "dst": "ota",
+  "method": "network_status_changed",
+  "params": {
+    "connected": true,
+    "iface": "wlan0",
+    "metered": false
+  },
+  "id": 42,
+  "ts": 1717000000
+}</code></pre>
+
+  <h3>Daftar System Services</h3>
+
+  <table>
+    <tr><th>Service</th><th>Binary</th><th>Deskripsi</th><th>Krate Utama</th></tr>
+    <tr>
+      <td>Compositor</td>
+      <td><code>lumind</code></td>
+      <td>Wayland compositor + DRM/KMS backend</td>
+      <td><code>smithay</code></td>
+    </tr>
+    <tr>
+      <td>OTA Manager</td>
+      <td><code>otad</code></td>
+      <td>Dual-slot update via RAUC + casync</td>
+      <td><code>rauc-rs</code>, <code>reqwest</code></td>
+    </tr>
+    <tr>
+      <td>Network Manager</td>
+      <td><code>netmd</code></td>
+      <td>Network configuration, WiFi, Ethernet, Bluetooth tethering</td>
+      <td><code>netlink-rs</code>, <code>zbus</code></td>
+    </tr>
+    <tr>
+      <td>Audio Manager</td>
+      <td><code>audiod</code></td>
+      <td>PipeWire session &amp; policy manager</td>
+      <td><code>pipewire-rs</code></td>
+    </tr>
+    <tr>
+      <td>Package Manager</td>
+      <td><code>pkgd</code></td>
+      <td>Install/uninstall/update apps (Flatpak-style sandbox)</td>
+      <td><code>ostree-rs</code>, <code>libc</code></td>
+    </tr>
+    <tr>
+      <td>Device Manager</td>
+      <td><code>devmand</code></td>
+      <td>USB/Bluetooth/HDMI-CEC hotplug + firmware loading</td>
+      <td><code>udev-rs</code></td>
+    </tr>
+    <tr>
+      <td>Input Manager</td>
+      <td><code>inputd</code></td>
+      <td>evdev device handling, keymaps, remote control</td>
+      <td><code>evdev-rs</code>, <code>libinput</code></td>
+    </tr>
+    <tr>
+      <td>Display Manager</td>
+      <td><code>dispald</code></td>
+      <td>Display detection, mode setting, HDR config, EDID parsing</td>
+      <td><code>edid-rs</code>, <code>drm-rs</code></td>
+    </tr>
+    <tr>
+      <td>Notification Bus</td>
+      <td><code>notifd</code></td>
+      <td>System notifications ke UI shell</td>
+      <td><code>stardust</code></td>
+    </tr>
+    <tr>
+      <td>Process Supervisor</td>
+      <td><code>monitord</code></td>
+      <td>Process lifecycle, restart policy, crash reporting</td>
+      <td><code>libc</code>, <code>nix</code></td>
+    </tr>
+    <tr>
+      <td>Power Manager</td>
+      <td><code>powermand</code></td>
+      <td>Suspend/resume, idle detection, CEC power</td>
+      <td><code>zbus</code> (logind)</td>
+    </tr>
+    <tr>
+      <td>Log Daemon</td>
+      <td><code>logd</code></td>
+      <td>Centralized structured logging (journald-compatible)</td>
+      <td><code>tracing</code>, <code>systemd-journal</code></td>
+    </tr>
+  </table>
+
+  <h3>Contoh: Stardust Message Client (Rust)</h3>
+  <pre><code>// stardust-client.rs — contoh publish dari service
+use stardust::{Client, Message, Method};
+
+#[tokio::main]
+async fn main() -> stardust::Result&lt;()&gt; {
+    let client = Client::connect("/run/uos/bus.sock").await?;
+
+    // Subscribe ke event network
+    let mut rx = client.subscribe("network.*").await?;
+
+    // Publish status
+    client.publish(Message::new("network.status")
+        .param("connected", true)
+        .param("iface", "eth0")
+    ).await?;
+
+    // Request-response
+    let resp = client.call("ota.check_update", ())
+        .timeout(Duration::from_secs(5))
+        .await??;
+
+    Ok(())
+}</code></pre>
+</section>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  5. OTA UPDATE                               -->
+<!-- ════════════════════════════════════════════ -->
+<section id="ota">
+  <h2><span class="sec-num">05</span> OTA Update System</h2>
+
+  <p>
+    Sistem OTA UOS TV menggunakan <strong>dual-slot A/B update</strong> dengan 
+    <strong>RAUC</strong> (Robust Auto-Update Controller) sebagai framework update, 
+    dan <strong>casync</strong> untuk delta-based image delivery yang hemat bandwidth.
+  </p>
+
+  <h3>Arsitektur Dual-Slot A/B</h3>
+  <div class="arch-diagram">
+┌───────────────────────────────────────────────────┐
+│              eMMC / NVMe (8GB+)                   │
+│                                                   │
+│  ┌─────────┐ ┌──────────┐ ┌──────┐ ┌───────────┐ │
+│  │  Slot A │ │  Slot B  │ │ Data │ │  Recovery  │ │
+│  │ (boot)  │ │ (update) │ │      │ │  (factory) │ │
+│  │  2.5 GB │ │  2.5 GB  │ │ 2 GB │ │   1 GB     │ │
+│  └────┬────┘ └────┬─────┘ └──────┘ └───────────┘ │
+│       │           │                               │
+│       └───┬───────┘                               │
+│           │                                       │
+│  ┌────────▼───────┐                               │
+│  │  U-Boot SPL    │  → memilih slot via bootcount │
+│  │  + environment │    & BOOT_ORDER               │
+│  └────────────────┘                               │
+└───────────────────────────────────────────────────┘
+  </div>
+
+  <h4>Proses Update OTA — Step by Step</h4>
+  <ol>
+    <li><strong>Polling / Push Notification</strong> — <code>otad</code> memeriksa 
+        update server via HTTPS secara periodik (default: setiap 6 jam) atau menerima 
+        push notification via WebSocket persistent connection.</li>
+    <li><strong>Metadata Download</strong> — Unduh <code>update.yaml</code> berisi 
+        versi, ukuran, hash SHA256, changelog, dan flag <em>critical</em>.</li>
+    <li><strong>Delta Computation</strong> — Server menyediakan <code>casync</code> 
+        index (<code>.caibx</code>). <code>otad</code> menggunakan 
+        <code>casync-rs</code> untuk menghitung chunk yang sudah ada (reuse dari 
+        local store atau slot B).</li>
+    <li><strong>Download Chunks</strong> — Hanya chunk yang berubah diunduh. 
+        Estimasi bandwidth: 30-80% lebih kecil dari full image.</li>
+    <li><strong>Verification</strong> — Hash SHA256 setiap chunk diverifikasi saat 
+        diterima. Bundle di-<em>assemble</em> dengan streaming verification.</li>
+    <li><strong>Install ke Slot B</strong> — Image di-<em>write</em> ke partisi 
+        slot B menggunakan <code>rauc</code>. Partisi slot A tidak disentuh 
+        selama proses ini.</li>
+    <li><strong>Bootloader Update</strong> — U-Boot environment variable: 
+        <code>BOOT_ORDER</code> di-set ke "B A", <code>BOOT_B_LEFT</code> = 3 
+        (try B, fallback A).</li>
+    <li><strong>Reboot</strong> — Sistem reboot ke slot B. Jika boot berhasil, 
+        <code>otad</code> menandai slot B sebagai <em>good</em> via 
+        <code>rauc status mark-good</code>.</li>
+    <li><strong>Rollback</strong> — Jika boot gagal (kernel panic, watchdog, 
+        atau service critical crash), U-Boot akan <em>decrement</em> counter 
+        dan fallback ke slot A. Data partisi tetap aman.</li>
+  </ol>
+
+  <h3>Komponen OTA — Rust Crates</h3>
+  <table>
+    <tr><th>Crate</th><th>Fungsi</th></tr>
+    <tr><td><code>otad</code></td><td>Service utama OTA: polling, download, install orchestration</td></tr>
+    <tr><td><code>rauc-rs</code></td><td>Rust binding untuk RAUC D-Bus API (check, install, mark)</td></tr>
+    <tr><td><code>casync-rs</code></td><td>Rust implementasi casync chunking + reassembly (pure Rust, no C)</td></tr>
+    <tr><td><code>update-verify</code></td><td>Verifikasi signature (Ed25519) dan hash chain bundle</td></tr>
+    <tr><td><code>ota-config</code></td><td>Konfigurasi server URL, interval, retry policy, metered network policy</td></tr>
+  </table>
+
+  <h3>Server-Side (Update Backend)</h3>
+  <p>
+    Update server adalah service Rust (<code>axum</code> + <code>SQLite</code>) 
+    yang menyediakan:
+  </p>
+  <ul>
+    <li><strong>REST API</strong> — <code>GET /api/v1/update/check?device=...&amp;current=...</code> 
+        mengembalikan metadata update</li>
+    <li><strong>Chunked Download</strong> — <code>GET /api/v1/update/download/:bundle_id</code> 
+        dengan dukungan range request + resume</li>
+    <li><strong>casync Index Generation</strong> — Server otomatis membuat 
+        <code>.caibx</code> index setiap kali build baru diunggah</li>
+    <li><strong>Release Channels</strong> — <code>stable</code>, <code>beta</code>, 
+        <code>dev</code>. Setiap perangkat bisa memilih channel.</li>
+    <li><strong>Staged Rollout</strong> — Persentase rollout bertahap (10% → 50% → 100%) 
+        dengan automatic halt jika error rate meningkat.</li>
+  </ul>
+
+  <h3>Keamanan OTA</h3>
+  <ul>
+    <li><strong>Ed25519 Signature</strong> — Bundle update ditandatangani dengan 
+        Ed25519. Public key di-<em>embed</em> di kernel command line / dtb dan 
+        diverifikasi oleh RAUC saat install.</li>
+    <li><strong>TLS 1.3 + Certificate Pinning</strong> — Semua komunikasi HTTPS 
+        dengan <code>rustls</code> + pinning certificate hash.</li>
+    <li><strong>dm-verity</strong> — Partisi rootfs menggunakan dm-verity. 
+        Hash tree diverifikasi saat read, mencegah modifikasi offline.</li>
+    <li><strong>Hardware Root of Trust</strong> — Jika tersedia TEE (OP-TEE / 
+        TrustZone), kunci signature disimpan di secure storage. Jika tidak, 
+        fallback ke efuse/OTP area.</li>
+  </ul>
+</section>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  6. FILESYSTEM                               -->
+<!-- ════════════════════════════════════════════ -->
+<section id="fs">
+  <h2><span class="sec-num">06</span> Struktur Filesystem</h2>
+
+  <pre><code>/
+├── boot/                    # Partisi boot (FAT32/ESP)
+│   ├── u-boot.bin
+│   ├── Image.gz             # Kernel Image (aarch64)
+│   ├── dtb/                 # Device tree blobs per board
+│   │   └── rockchip/
+│   │       └── rk3566-rock-3a.dtb
+│   └── extlinux/
+│       └── extlinux.conf    # Boot config
+│
+├── system/                  # Read-only rootfs (SquashFS + dm-verity)
+│   ├── usr/
+│   │   ├── bin/
+│   │   │   ├── lumind       # Compositor binary
+│   │   │   ├── otad         # OTA daemon
+│   │   │   ├── netmd        # Network manager
+│   │   │   ├── audiod       # Audio manager
+│   │   │   └── ...          # Semua system service binary
+│   │   ├── lib/
+│   │   │   ├── libwpebackend-uos.so  # Custom WPE backend
+│   │   │   └── libstardust.so        # IPC library
+│   │   └── share/
+│   │       ├── luna/        # Luna UI shell (HTML/CSS/JS)
+│   │       │   ├── index.html
+│   │       │   ├── shell.js
+│   │       │   ├── styles.css
+│   │       │   └── assets/
+│   │       ├── rauc/        # RAUC config & keyring
+│   │       │   ├── system.conf
+│   │       │   └── ca.cert.pem
+│   │       └── pipewire/    # PipeWire config
+│   └── etc/                 # Symlink → /data/etc
+│
+├── data/                    # Read-write persistent (ext4/F2FS)
+│   ├── etc/                 # Runtime config overrides
+│   │   ├── netmgr/
+│   │   ├── ota/
+│   │   └── display/
+│   ├── apps/                # Installed user apps (per-app sandbox)
+│   │   ├── youtube/
+│   │   ├── netflix/
+│   │   └── ...
+│   ├── cache/               # WebView cache, thumbnails
+│   ├── ota/                 # OTA download staging
+│   └── logs/                # Persistent logs
+│
+├── recovery/                # Recovery partition
+│   ├── kernel-recovery.gz
+│   └── initramfs-recovery.cpio.gz
+│
+├── dev/                     # devtmpfs
+├── proc/                    # procfs
+├── sys/                     # sysfs
+├── run/                     # tmpfs (runtime state)
+│   └── uos/
+│       ├── bus.sock         # Stardust IPC socket
+│       ├── lumind.sock      # Wayland display socket
+│       └── locks/           # Service lock files
+└── tmp/                     # tmpfs</code></pre>
+</section>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  7. BOOT PROCESS                             -->
+<!-- ════════════════════════════════════════════ -->
+<section id="boot">
+  <h2><span class="sec-num">07</span> Boot Process</h2>
+
+  <div class="timeline">
+    <div class="timeline-item">
+      <h4>1. ROM Bootloader → U-Boot SPL</h4>
+      <p>SoC ROM memuat U-Boot SPL dari eMMC/SD. SPL menginisialisasi DRAM, 
+         memeriksa <code>bootcount</code> untuk A/B slot selection, lalu 
+         memuat U-Boot proper.</p>
+    </div>
+    <div class="timeline-item">
+      <h4>2. U-Boot Proper</h4>
+      <p>U-Boot membaca <code>extlinux.conf</code> dari partisi boot slot terpilih. 
+         Memuat kernel <code>Image.gz</code>, DTB, dan initramfs. 
+         Meneruskan <code>dm-mod.create=...</code> untuk dm-verity rootfs.</p>
+    </div>
+    <div class="timeline-item">
+      <h4>3. Linux Kernel Boot</h4>
+      <p>Kernel inisialisasi driver, mount rootfs SquashFS via dm-verity, 
+         pivot_root, lalu menjalankan <code>/init</code> dari initramfs.</p>
+    </div>
+    <div class="timeline-item">
+      <h4>4. init (inis) — Tiny Init (Rust)</h4>
+      <p><code>inis</code> adalah init system minimalis dalam Rust:
+         mount filesystem (<code>/data</code>, <code>/run</code>, <code>/tmp</code>), 
+         setup loopback, start <code>monitord</code> sebagai PID 2.</p>
+    </div>
+    <div class="timeline-item">
+      <h4>5. monitord — Process Supervisor</h4>
+      <p><code>monitord</code> membaca service manifest dari <code>/usr/share/uos/services.d/</code>, 
+         lalu start semua service sesuai urutan dependensi (dependency graph).</p>
+    </div>
+    <div class="timeline-item">
+      <h4>6. Service Startup Order</h4>
+      <p>① logd → ② devmand → ③ dispald → ④ inputd → ⑤ lumind (compositor) → 
+         ⑥ audiod → ⑦ netmd → ⑧ notifd → ⑨ powermand → ⑩ pkgd → ⑪ otad</p>
+    </div>
+    <div class="timeline-item">
+      <h4>7. Luna UI Shell Launch</h4>
+      <p><code>lumind</code> menjalankan WPE WebKit yang memuat <code>file:///usr/share/luna/index.html</code>. 
+         Luna shell menampilkan boot animation → home launcher.</p>
+    </div>
+    <div class="timeline-item">
+      <h4>8. Ready</h4>
+      <p>Sistem siap. <code>otad</code> memulai polling OTA di background. 
+         Total boot time target: <strong>&lt; 8 detik</strong> (cold boot, ke home launcher).</p>
+    </div>
+  </div>
+
+  <h3>inis — Tiny Init (Rust)</h3>
+  <pre><code>// inis/src/main.rs — init system minimalis
+use nix::mount::{mount, MsFlags};
+use nix::unistd::{chdir, chroot, execve};
+use std::process::Command;
+
+fn main() {
+    // Mount pseudo-filesystems
+    mount(Some("devtmpfs"), "/dev", "devtmpfs", MsFlags::empty(), None::&amp;str).unwrap();
+    mount(Some("proc"), "/proc", "proc", MsFlags::empty(), None::&amp;str).unwrap();
+    mount(Some("sysfs"), "/sys", "sysfs", MsFlags::empty(), None::&amp;str).unwrap();
+    mount(Some("tmpfs"), "/run", "tmpfs", MsFlags::empty(), None::&amp;str).unwrap();
+
+    // Mount data partition
+    mount(Some("/dev/mmcblk0p5"), "/data", "ext4", MsFlags::empty(), None::&amp;str).unwrap();
+
+    // Start process supervisor as PID 2
+    let monitord = Command::new("/usr/bin/monitord")
+        .spawn()
+        .expect("Failed to start monitord");
+
+    // Reap zombies, wait forever
+    loop {
+        nix::sys::wait::wait().unwrap();
+    }
+}</code></pre>
+</section>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  8. QEMU                                     -->
+<!-- ════════════════════════════════════════════ -->
+<section id="qemu">
+  <h2><span class="sec-num">08</span> QEMU Development &amp; Testing</h2>
+
+  <p>
+    UOS TV dirancang agar dapat di-<em>build</em>, di-<em>run</em>, dan di-<em>test</em> 
+    sepenuhnya di QEMU tanpa memerlukan hardware fisik — ideal untuk CI/CD dan 
+    pengembangan iteratif.
+  </p>
+
+  <h3>Target Emulasi</h3>
+  <table>
+    <tr><th>Parameter</th><th>Nilai</th></tr>
+    <tr><td>Arsitektur</td><td><code>aarch64</code> (ARMv8-A)</td></tr>
+    <tr><td>Machine</td><td><code>virt</code> (generic ARM virtual platform)</td></tr>
+    <tr><td>GPU</td><td><code>virtio-gpu-gl</code> (VirGL — OpenGL ES 3.2 host-accelerated)</td></tr>
+    <tr><td>Display</td><td>GTK/SDL window 1920×1080 atau headless via Virgil</td></tr>
+    <tr><td>Input</td><td>USB keyboard + USB mouse tablet (absolute positioning)</td></tr>
+    <tr><td>Network</td><td><code>virtio-net</code> + user-mode NAT (SLIRP)</td></tr>
+    <tr><td>Storage</td><td>virtio-blk (eMMC image raw) atau virtio-scsi</td></tr>
+    <tr><td>RAM</td><td>2 GB (default), scaleable ke 4 GB</td></tr>
+    <tr><td>CPU</td><td><code>cortex-a72</code> (4 core)</td></tr>
+  </table>
+
+  <h3>One-Command Build & Run</h3>
+  <pre><code># Clone repository
+git clone https://github.com/urip/uos-tv.git && cd uos-tv
+
+# Build semuanya (Kernel + RootFS + Services + UI)
+make qemu
+
+# Command di atas menjalankan:
+# 1. Build Armbian rootfs base (armbian/build)
+# 2. Build Linux kernel 6.6 dengan config fragment uos
+# 3. Build semua Rust services (cargo build --release --target aarch64-unknown-linux-musl)
+# 4. Build WPE WebKit dengan backend kustom
+# 5. Build Luna UI shell (bundle HTML/CSS/JS)
+# 6. Assembly image final (.img) — partisi A/B + data
+# 7. Jalankan QEMU dengan image tersebut</code></pre>
+
+  <h3>QEMU Command Detail</h3>
+  <pre><code>#!/bin/bash
+# scripts/run-qemu.sh
+
+qemu-system-aarch64 \
+  -M virt,accel=hvf \                          # HVF acceleration on macOS
+  -cpu cortex-a72 -smp 4 -m 2048 \
+  -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd \  # UEFI firmware
+  -drive file=build/uos-tv.img,format=raw,if=virtio \
+  -device virtio-gpu-gl,xres=1920,yres=1080 \
+  -display gtk,gl=on \                         # or -display cocoa,gl=on on macOS
+  -device virtio-net,netdev=net0 \
+  -netdev user,id=net0,hostfwd=tcp::2222-:22 \  # SSH tunnel
+  -device usb-ehci \
+  -device usb-kbd \
+  -device usb-tablet \
+  -audiodev coreaudio,id=snd0 \                # or pipewire,id=snd0
+  -device intel-hda -device hda-output,audiodev=snd0</code></pre>
+
+  <h3>QEMU Testing Matrix (CI/CD)</h3>
+  <table>
+    <tr><th>Test</th><th>Framework</th><th>Keterangan</th></tr>
+    <tr><td>Boot test</td><td>Expect script + serial console</td><td>Verifikasi boot sampai login prompt</td></tr>
+    <tr><td>Service smoke test</td><td>SSH + <code>systemctl is-active</code> equivalent</td><td>Semua service aktif</td></tr>
+    <tr><td>GPU rendering</td><td>VirGL + <code>glmark2-es2</code> headless</td><td>Verifikasi OpenGL ES 3.2 berfungsi</td></tr>
+    <tr><td>WPE WebKit</td><td>Headless WPE + <code>WPEBackend-fdo</code></td><td>Rendering webpage ke offscreen buffer</td></tr>
+    <tr><td>OTA A/B</td><td>Scripted update + reboot + verify slot switch</td><td>Simulasi OTA dual-slot</td></tr>
+    <tr><td>Network</td><td>curl + ping dari dalam VM</td><td>Verifikasi virtio-net connectivity</td></tr>
+    <tr><td>Memory leak</td><td>Valgrind + 24h soak test di QEMU</td><td>Verifikasi tidak ada memory leak</td></tr>
+  </table>
+
+  <h3>Cross-Compilation Setup</h3>
+  <pre><code># Rust cross-compilation ke aarch64
+rustup target add aarch64-unknown-linux-musl
+
+# cargo/config.toml
+[target.aarch64-unknown-linux-musl]
+linker = "aarch64-linux-musl-gcc"
+
+[build]
+target = "aarch64-unknown-linux-musl"
+
+# Build semua services
+cargo build --release --workspace</code></pre>
+</section>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  9. BUILD & TOOLCHAIN                        -->
+<!-- ════════════════════════════════════════════ -->
+<section id="build">
+  <h2><span class="sec-num">09</span> Build &amp; Toolchain</h2>
+
+  <h3>Repository Structure</h3>
+  <pre><code>uos-tv/
+├── Cargo.toml                    # Workspace root
+├── Makefile                      # Top-level build orchestrator
+├── configs/
+│   ├── kernel/
+│   │   └── uos-tv.config         # Kernel config fragment
+│   ├── armbian/
+│   │   └── uos-tv.csc            # Armbian board config
+│   └── rauc/
+│       └── system.conf           # RAUC dual-slot config
+├── crates/
+│   ├── lumind/                   # Compositor
+│   ├── otad/                     # OTA daemon
+│   ├── netmd/                    # Network manager
+│   ├── audiod/                   # Audio manager
+│   ├── pkgd/                     # Package manager
+│   ├── devmand/                  # Device manager
+│   ├── inputd/                   # Input manager
+│   ├── dispald/                  # Display manager
+│   ├── notifd/                   # Notification bus
+│   ├── monitord/                 # Process supervisor
+│   ├── powermand/                # Power manager
+│   ├── logd/                     # Log daemon
+│   ├── inis/                     # Tiny init
+│   ├── stardust/                 # IPC library (client + broker)
+│   ├── casync-rs/                # casync pure Rust
+│   ├── rauc-rs/                  # RAUC Rust bindings
+│   └── update-verify/            # Update signature verification
+├── luna/                         # Luna UI shell
+│   ├── index.html
+│   ├── shell.js
+│   ├── styles.css
+│   ├── apps/                     # Built-in apps (Settings, App Store)
+│   └── assets/
+├── armbian/                      # Armbian build submodule
+├── scripts/
+│   ├── build.sh                  # Full build script
+│   ├── run-qemu.sh               # QEMU launcher
+│   ├── create-image.sh           # Image assembly
+│   ├── ota-create-bundle.sh      # RAUC bundle creation
+│   └── ci/
+│       └── test.sh               # CI test runner
+├── tests/
+│   ├── integration/              # Integration tests (Rust)
+│   ├── e2e/                      # End-to-end QEMU tests
+│   └── fixtures/                 # Test data
+├── .github/
+│   └── workflows/
+│       ├── build.yml             # Build + unit test
+│       ├── qemu-test.yml         # QEMU integration test
+│       └── release.yml           # Release build + OTA bundle
+└── docs/
+    ├── architecture.md
+    ├── contributing.md
+    └── prd.html                  # ← dokumen ini</code></pre>
+
+  <h3>Dependency Overview</h3>
+  <table>
+    <tr><th>Komponen</th><th>Dependency</th><th>Lisensi</th></tr>
+    <tr><td>Kernel</td><td>Linux 6.6 LTS</td><td>GPL-2.0</td></tr>
+    <tr><td>U-Boot</td><td>U-Boot 2024.04</td><td>GPL-2.0</td></tr>
+    <tr><td>Armbian Base</td><td>Armbian Build Framework</td><td>GPL-2.0</td></tr>
+    <tr><td>Compositor</td><td>Smithay 0.3</td><td>MIT</td></tr>
+    <tr><td>Web Runtime</td><td>WPE WebKit 2.44</td><td>LGPL-2.1+</td></tr>
+    <tr><td>Audio</td><td>PipeWire 1.0</td><td>MIT</td></tr>
+    <tr><td>GPU (userspace)</td><td>Mesa 24.0 (Panfrost/Lima)</td><td>MIT</td></tr>
+    <tr><td>OTA</td><td>RAUC 1.11</td><td>LGPL-2.1</td></tr>
+    <tr><td>TLS</td><td>rustls 0.23</td><td>Apache-2.0/ISC/MIT</td></tr>
+    <tr><td>Async Runtime</td><td>tokio 1.x</td><td>MIT</td></tr>
+    <tr><td>Serialization</td><td>serde + ciborium (CBOR)</td><td>MIT/Apache-2.0</td></tr>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  10. ROADMAP                                 -->
+<!-- ════════════════════════════════════════════ -->
+<section id="timeline">
+  <h2><span class="sec-num">10</span> Roadmap &amp; Timeline Pengembangan</h2>
+
+  <h3>Fase 1 — Foundation (Bulan 1-3)</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>✅ Armbian Base Bring-Up</h4>
+      <p>Build Armbian rootfs untuk target QEMU virt aarch64. Kernel 6.6 bootable di QEMU. 
+         GPU VirGL berfungsi penuh.</p>
+    </div>
+    <div class="card">
+      <h4>✅ inis + monitord</h4>
+      <p>Init system minimalis + process supervisor dalam Rust. 
+         Dependency graph service ordering.</p>
+    </div>
+    <div class="card">
+      <h4>✅ stardust IPC</h4>
+      <p>Library IPC pub/sub + broker daemon. Unix socket + CBOR. 
+         Request-response + event streaming.</p>
+    </div>
+    <div class="card">
+      <h4>✅ logd</h4>
+      <p>Centralized logging dengan tracing crate. Structured JSON log output.</p>
+    </div>
+  </div>
+
+  <h3>Fase 2 — Display &amp; Input (Bulan 4-6)</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>🎯 lumind — Basic Wayland Compositor</h4>
+      <p>Smithay-based DRM/KMS compositor. Bisa menjalankan weston-terminal 
+         dan simple EGL client via VirGL di QEMU.</p>
+    </div>
+    <div class="card">
+      <h4>🎯 dispald + inputd</h4>
+      <p>DRM display management (EDID, modeset). evdev input handling 
+         (keyboard, mouse, touch, remote control).</p>
+    </div>
+    <div class="card">
+      <h4>🎯 WPE WebKit Integration</h4>
+      <p>Build WPE WebKit untuk aarch64. Custom backend <code>libwpebackend-uos</code>. 
+         WebKit surface muncul sebagai client Wayland lumind.</p>
+    </div>
+  </div>
+
+  <h3>Fase 3 — UI &amp; Apps (Bulan 7-9)</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>🎯 Luna Shell v1</h4>
+      <p>Home launcher dengan card-based UI, settings panel, app launching. 
+         Animasi transisi 60fps CSS GPU-accelerated.</p>
+    </div>
+    <div class="card">
+      <h4>🎯 audiod + netmd</h4>
+      <p>PipeWire session manager, audio routing, volume control. 
+         WiFi/Ethernet network management dengan UI.</p>
+    </div>
+    <div class="card">
+      <h4>🎯 pkgd — App Manager</h4>
+      <p>Install/uninstall aplikasi web (PWA-style). Per-app sandbox (separate WPE WebView process).</p>
+    </div>
+    <div class="card">
+      <h4>🎯 Hardware Video Decode</h4>
+      <p>V4L2 stateless decode pipeline terintegrasi ke WPE WebKit HTML5 video. 
+         Zero-copy ke KMS overlay plane.</p>
+    </div>
+  </div>
+
+  <h3>Fase 4 — OTA &amp; Production (Bulan 10-12)</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>🎯 otad — OTA Manager</h4>
+      <p>Dual-slot A/B update dengan RAUC + casync. 
+         Delta update, automatic rollback, boot counting.</p>
+    </div>
+    <div class="card">
+      <h4>🎯 Update Server</h4>
+      <p>Rust backend (axum) untuk OTA delivery. 
+         Release channels, staged rollout, dashboard monitoring.</p>
+    </div>
+    <div class="card">
+      <h4>🎯 Security Hardening</h4>
+      <p>dm-verity rootfs, SELinux enforcing, capability dropping per service, 
+         seccomp-bpf syscall filtering, TLS certificate pinning.</p>
+    </div>
+    <div class="card">
+      <h4>🎯 Hardware Bring-Up</h4>
+      <p>Porting ke hardware nyata: Rockchip RK3566/RK3588, Amlogic S905X. 
+         U-Boot board config, DTB, driver enablement.</p>
+    </div>
+  </div>
+
+  <h3>Fase 5 — Ecosystem (Bulan 13+)</h3>
+  <ul>
+    <li><strong>App Store</strong> — Web app marketplace dengan rating, review, 
+        dan automated security review (Content Security Policy audit)</li>
+    <li><strong>SDK &amp; Simulator</strong> — Rust SDK untuk app development + 
+        QEMU simulator dengan hot-reload</li>
+    <li><strong>Voice Control</strong> — On-device speech recognition (whisper.cpp 
+        via Rust binding) atau cloud-based</li>
+    <li><strong>Multi-display</strong> — Dukungan dual/triple display untuk signage</li>
+    <li><strong>HDMI-CEC Deep Integration</strong> — Kontrol TV penuh via CEC 
+        (power, volume, input switching)</li>
+  </ul>
+</section>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  11. RISIKO                                  -->
+<!-- ════════════════════════════════════════════ -->
+<section id="risk">
+  <h2><span class="sec-num">11</span> Risiko &amp; Mitigasi</h2>
+
+  <table>
+    <tr><th>Risiko</th><th>Severity</th><th>Mitigasi</th></tr>
+    <tr>
+      <td>GPU driver open-source (Panfrost/Lima) tidak stabil di SoC tertentu</td>
+      <td>High</td>
+      <td>Prioritaskan SoC dengan dukungan GPU matur (RK3566/RK3588). 
+          QEMU VirGL sebagai fallback development target.</td>
+    </tr>
+    <tr>
+      <td>VPU (video decoder) tidak didukung V4L2 stateless API di semua SoC</td>
+      <td>Medium</td>
+      <td>Gunakan Hantro/RKVDEC yang sudah upstream. Untuk SoC tanpa dukungan, 
+          fallback ke software decode via FFmpeg (single 1080p H.264).</td>
+    </tr>
+    <tr>
+      <td>Smithay belum mature untuk production compositor</td>
+      <td>Medium</td>
+      <td>Kontribusi upstream ke Smithay untuk fitur yang dibutuhkan. 
+          Fallback: wlroots + wlroots-rs binding.</td>
+    </tr>
+    <tr>
+      <td>WPE WebKit build untuk aarch64 cross-compilation kompleks</td>
+      <td>Medium</td>
+      <td>Build di QEMU aarch64 native VM (meski lambat) atau gunakan 
+          Yocto/Buildroot toolchain yang sudah menyediakan WPE recipe.</td>
+    </tr>
+    <tr>
+      <td>RAUC memerlukan bootloader support (U-Boot integration)</td>
+      <td>Low</td>
+      <td>U-Boot sudah mendukung BOOTCOUNT + BOOT_ORDER untuk A/B. 
+          Uji awal di QEMU dengan U-Boot virt target.</td>
+    </tr>
+    <tr>
+      <td>Ekosistem Rust bare-metal embedded masih berkembang</td>
+      <td>Low</td>
+      <td>Kita tidak bare-metal — kita di atas Linux + Armbian. 
+          Ekosistem Rust untuk Linux userspace sudah sangat matur.</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════ -->
+<!--  12. APPENDICES                              -->
+<!-- ════════════════════════════════════════════ -->
+<section id="appendices">
+  <h2><span class="sec-num">12</span> Appendices</h2>
+
+  <h3>A. Target SoC Comparison</h3>
+  <table>
+    <tr><th>SoC</th><th>CPU</th><th>GPU</th><th>VPU</th><th>Kernel Support</th><th>Rekomendasi</th></tr>
+    <tr><td>RK3566</td><td>4×Cortex-A55</td><td>Mali-G52 (Panfrost)</td><td>RKVDEC (H.265/VP9 4K)</td><td>Mainline 6.6 ✅</td><td>⭐⭐⭐ Target utama</td></tr>
+    <tr><td>RK3588</td><td>4×A76+4×A55</td><td>Mali-G610 (Panthor)</td><td>RKVDEC (AV1 8K)</td><td>Mainline 6.7+ ✅</td><td>⭐⭐⭐ High-end</td></tr>
+    <tr><td>S905X</td><td>4×Cortex-A53</td><td>Mali-450 (Lima)</td><td>V4L2 (H.265 4K)</td><td>Mainline 6.1 ✅</td><td>⭐⭐ Entry target</td></tr>
+    <tr><td>Allwinner H616</td><td>4×Cortex-A53</td><td>Mali-G31 (Panfrost)</td><td>Cedrus (H.265 4K)</td><td>Mainline 6.2 ✅</td><td>⭐ Alternatif</td></tr>
+    <tr><td>QEMU virt</td><td>N×Cortex-A72</td><td>VirGL (host GPU)</td><td>N/A (host CPU)</td><td>Mainline 6.6 ✅</td><td>⭐⭐⭐ Dev only</td></tr>
+  </table>
+
+  <h3>B. Rust Crate Dependency Tree (Key Crates)</h3>
+  <pre><code>lumind (compositor)
+├── smithay
+│   ├── drm-rs
+│   ├── gbm-rs
+│   ├── input (libinput)
+│   └── wayland-server
+├── tracing
+├── tokio (async runtime)
+├── serde + serde_json
+└── stardust (IPC client)
+
+otad (OTA manager)
+├── reqwest (HTTPS client, rustls)
+├── rauc-rs (D-Bus client)
+├── casync-rs (delta chunking)
+├── update-verify (Ed25519 signature)
+├── tokio
+├── serde + serde_yaml
+└── tracing
+
+netmd (network manager)
+├── zbus (D-Bus client, system bus)
+├── netlink-rs (rtnetlink)
+├── tokio
+├── serde
+└── tracing
+
+audiod (audio manager)
+├── pipewire-rs
+├── tokio
+├── serde
+└── tracing</code></pre>
+
+  <h3>C. Resource Budget</h3>
+  <table>
+    <tr><th>Resource</th><th>Target (Idle)</th><th>Target (Video Playback)</th></tr>
+    <tr><td>RAM</td><td>&lt; 256 MB</td><td>&lt; 400 MB</td></tr>
+    <tr><td>Storage (System)</td><td>2 GB (SquashFS)</td><td>2 GB</td></tr>
+    <tr><td>Storage (User Data)</td><td>100 MB</td><td>Variabel (cache, apps)</td></tr>
+    <tr><td>CPU (Idle)</td><td>&lt; 1% total</td><td>N/A</td></tr>
+    <tr><td>CPU (Video)</td><td>N/A</td><td>&lt; 15% (HW decode)</td></tr>
+    <tr><td>Boot Time</td><td>&lt; 8s (cold)</td><td>N/A</td></tr>
+    <tr><td>OTA Delta Size</td><td>&lt; 80 MB (typical)</td><td>&lt; 200 MB (kernel+sys)</td></tr>
+  </table>
+
+  <h3>D. Istilah &amp; Singkatan</h3>
+  <table>
+    <tr><th>Istilah</th><th>Kepanjangan</th></tr>
+    <tr><td>UOS</td><td>Urip Operating System</td></tr>
+    <tr><td>WPE</td><td>Web Platform for Embedded</td></tr>
+    <tr><td>KMS / DRM</td><td>Kernel Mode Setting / Direct Rendering Manager</td></tr>
+    <tr><td>GBM</td><td>Generic Buffer Management</td></tr>
+    <tr><td>dm-verity</td><td>Device Mapper Verity (integrity checking)</td></tr>
+    <tr><td>RAUC</td><td>Robust Auto-Update Controller</td></tr>
+    <tr><td>casync</td><td>Content-Addressable Synchronization</td></tr>
+    <tr><td>CBOR</td><td>Concise Binary Object Representation</td></tr>
+    <tr><td>OTA</td><td>Over-The-Air (update)</td></tr>
+    <tr><td>V4L2</td><td>Video4Linux version 2</td></tr>
+    <tr><td>SELinux</td><td>Security-Enhanced Linux</td></tr>
+    <tr><td>VPU</td><td>Video Processing Unit</td></tr>
+    <tr><td>VirGL</td><td>Virtual GPU (QEMU OpenGL passthrough)</td></tr>
+  </table>
+</section>
+
+</div><!-- /container -->
+
+<footer>
+  <p><strong>UOS TV PRD v1.0</strong> — Juni 2025</p>
+  <p>Dokumen ini adalah artifact hidup yang akan berevolusi seiring pengembangan.</p>
+  <p style="margin-top:8px">
+    <code>🦀 99% Rust &nbsp;|&nbsp; 🍊 Armbian &nbsp;|&nbsp; 📺 WebOS-style &nbsp;|&nbsp; 💻 QEMU-ready &nbsp;|&nbsp; 🔄 OTA Atomic</code>
+  </p>
+</footer>
+
+</body>
+</html>

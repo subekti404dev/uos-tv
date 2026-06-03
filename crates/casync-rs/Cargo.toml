@@ -1,0 +1,21 @@
+[package]
+name = "casync-rs"
+version = "0.1.0"
+edition = "2024"
+description = "Pure Rust content-addressable synchronization — chunking, indexing, delta computation"
+
+[dependencies]
+tokio = { workspace = true, features = ["fs", "io-util"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ciborium = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+sha2 = "0.10"
+hex = "0.4"
+bytes = { workspace = true }
+env_logger = "0.11"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,11 @@
+name: powermand
+description: "Power manager — idle detection, suspend, shutdown"
+binary: /usr/bin/powermand
+dependencies:
+  - stardust
+after:
+  - lumind
+restart: always
+restart_delay_ms: 3000
+critical: false
+startup_timeout_secs: 5

@@ -1,0 +1,8 @@
+name: dispald
+description: "Display manager — backlight, resolution, night mode"
+binary: /usr/bin/dispald
+dependencies:
+  - stardust
+restart: on-failure
+critical: false
+startup_timeout_secs: 5

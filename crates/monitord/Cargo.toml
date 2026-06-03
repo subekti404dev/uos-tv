@@ -1,0 +1,29 @@
+[package]
+name = "monitord"
+version = "0.1.0"
+edition = "2024"
+description = "Process supervisor for UOS TV — service lifecycle management"
+
+[lib]
+name = "monitord"
+path = "src/lib.rs"
+
+[[bin]]
+name = "monitord"
+path = "src/main.rs"
+
+[dependencies]
+nix = { workspace = true }
+libc = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { workspace = true, features = ["process", "signal", "time", "sync"] }
+thiserror = { workspace = true }
+clap = { workspace = true }
+dashmap = "6"
+parking_lot = "0.12"
+stardust = { path = "../stardust" }
+ciborium = { workspace = true }
+serde_json = { workspace = true }

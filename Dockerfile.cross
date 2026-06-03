@@ -1,0 +1,102 @@
+# UOS TV — Cross-Compilation Docker Image
+# ============================================
+# Builds aarch64-unknown-linux-musl binaries for UOS TV.
+#
+# Strategy:
+#   Rust ships pre-built musl libc for aarch64 (via rustup target add).
+#   We only need aarch64-linux-gnu-gcc AS LINKER — Rust provides libcore/libstd.
+#   No native C deps for most crates (lumind is cfg-gated for Linux-only).
+#
+# Result: fully static ARM64 ELF binaries.
+#
+# Build:
+#   docker build -t uos-builder -f Dockerfile.cross .
+#
+# Quick cross-compile (without building Docker):
+#   docker run --platform linux/amd64 --rm -v "$(pwd):/work" \
+#       rust:1.89-slim-bookworm sh -c "
+#         dpkg --add-architecture arm64 &&
+#         apt-get update && apt-get install -y --no-install-recommends \
+#           gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu qemu-user-static &&
+#         rustup target add aarch64-unknown-linux-musl &&
+#         cd /work &&
+#         CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc \
+#           cargo build --release --target aarch64-unknown-linux-musl
+#       "
+#
+# Usage:
+#   docker run --rm -v $(pwd):/work uos-builder make build
+#   docker run --rm -v $(pwd):/work uos-builder cargo build --release
+
+FROM rust:1-slim-bookworm
+
+# Install cross-compilation toolchain
+# aarch64-linux-gnu-gcc works as linker for Rust's pre-built musl target
+RUN dpkg --add-architecture arm64 && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    # Cross-compiler (GNU GCC, used as linker only)
+    gcc-aarch64-linux-gnu \
+    binutils-aarch64-linux-gnu \
+    # QEMU (system emulation + user-mode for testing ARM binaries)
+    qemu-user-static \
+    qemu-system-arm \
+    qemu-efi-aarch64 \
+    # Build system
+    make \
+    pkg-config \
+    cmake \
+    # Image building
+    parted \
+    dosfstools \
+    e2fsprogs \
+    mtools \
+    # RAUC (for OTA bundle creation)
+    rauc \
+    # Utilities
+    curl \
+    wget \
+    jq \
+    git \
+    python3 \
+    file \
+    tree \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Rust musl target (provides pre-built libcore/libstd/libc for musl)
+RUN rustup target add aarch64-unknown-linux-musl
+
+# Cargo cross-compilation config
+# The linker is aarch64-linux-gnu-gcc, but Rust uses its own musl libc.
+# -C target-feature=+crt-static: force static linking
+# -C link-arg=-s: strip debug symbols (smaller binary)
+#
+# NOTE: lumind (Smithay compositor) is excluded from cross-compilation
+# because it needs native C libs (libdrm, libgbm, libinput, wayland).
+# Build lumind separately on a native aarch64 system or with full Debian sysroot.
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc
+ENV CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc
+ENV RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-s"
+ENV CARGO_BUILD_TARGET=aarch64-unknown-linux-musl
+
+# Verify
+RUN aarch64-linux-gnu-gcc --version && \
+    rustc --version && \
+    cargo --version && \
+    rustup target list | grep 'aarch64.*musl.*installed' && \
+    echo "=== UOS Cross-Compile Ready ===" && \
+    echo "Linker: $(which aarch64-linux-gnu-gcc)"
+
+# Test: compile a simple static binary
+RUN cd /tmp && \
+    cargo new test-cross && \
+    cd test-cross && \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc \
+    cargo build --release --target aarch64-unknown-linux-musl 2>&1 | tail -5 && \
+    file target/aarch64-unknown-linux-musl/release/test-cross && \
+    echo "=== Cross-compilation verified ===" && \
+    rm -rf /tmp/test-cross
+
+WORKDIR /work
+
+# Default: build UOS TV release (exclude lumind — needs native C libs)
+CMD ["sh", "-c", "echo 'Building UOS TV for aarch64-unknown-linux-musl...' && cargo build --release --workspace --exclude lumind"]

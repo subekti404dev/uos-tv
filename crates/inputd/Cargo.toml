@@ -1,0 +1,22 @@
+[package]
+name = "inputd"
+version = "0.1.0"
+edition = "2024"
+description = "UOS TV Input Manager — evdev/libinput event handling"
+
+[[bin]]
+name = "inputd"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true, features = ["full"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+stardust = { path = "../stardust" }
+nix = { workspace = true }
+libc = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = "0.12"

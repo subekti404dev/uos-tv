@@ -1,0 +1,8 @@
+name: inputd
+description: "Input manager — remote control, keyboard, gamepad"
+binary: /usr/bin/inputd
+dependencies:
+  - stardust
+restart: always
+critical: false
+startup_timeout_secs: 5

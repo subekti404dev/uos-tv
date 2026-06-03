@@ -1,0 +1,12 @@
+[package]
+name = "rauc-rs"
+version = "0.1.0"
+edition = "2024"
+description = "RAUC (Robust Auto-Update Controller) Rust client bindings"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true, features = ["process", "io-util"] }

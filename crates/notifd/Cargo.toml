@@ -1,0 +1,18 @@
+[package]
+name = "notifd"
+version = "0.1.0"
+edition = "2024"
+description = "UOS TV Notification Daemon"
+
+[[bin]]
+name = "notifd"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true, features = ["full"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+stardust = { path = "../stardust" }
+uuid = { workspace = true }

@@ -1,0 +1,10 @@
+name: audiod
+description: "Audio manager — PipeWire session, volume control"
+binary: /usr/bin/audiod
+dependencies:
+  - stardust
+after:
+  - lumind
+restart: on-failure
+critical: false
+startup_timeout_secs: 8

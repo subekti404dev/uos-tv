@@ -1,0 +1,8 @@
+name: devmand
+description: "Device manager — udev, hotplug, USB detection"
+binary: /usr/bin/devmand
+dependencies:
+  - stardust
+restart: on-failure
+critical: false
+startup_timeout_secs: 10

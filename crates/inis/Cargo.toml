@@ -1,0 +1,15 @@
+[package]
+name = "inis"
+version = "0.1.0"
+edition = "2024"
+description = "Tiny init system for UOS TV — PID 1"
+
+[[bin]]
+name = "inis"
+path = "src/main.rs"
+
+[dependencies]
+nix = { workspace = true, features = ["fs", "hostname", "mount", "process", "signal", "ioctl"] }
+libc = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

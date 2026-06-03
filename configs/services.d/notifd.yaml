@@ -1,0 +1,10 @@
+name: notifd
+description: "Notification daemon — system & app notifications"
+binary: /usr/bin/notifd
+dependencies:
+  - stardust
+after:
+  - lumind
+restart: on-failure
+critical: false
+startup_timeout_secs: 5

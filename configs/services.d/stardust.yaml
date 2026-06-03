@@ -1,0 +1,21 @@
+name: stardust
+description: "IPC message broker"
+binary: /usr/bin/stardustd
+args:
+  - "--socket"
+  - "/run/uos/bus.sock"
+  - "--ws-addr"
+  - "0.0.0.0:9090"
+env:
+  - "STARDUST_SOCKET=/run/uos/bus.sock"
+dependencies: []
+restart: always
+restart_delay_ms: 500
+max_crash_count: 5
+crash_window_secs: 30
+critical: true
+startup_timeout_secs: 5
+health_check: stardust.ping
+caps:
+  keep:
+    - net_bind_service

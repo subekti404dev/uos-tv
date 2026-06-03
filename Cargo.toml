@@ -1,0 +1,80 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/stardust",
+  "crates/inis",
+  "crates/monitord",
+  "crates/logd",
+  "crates/lumind",
+  "crates/otad",
+  "crates/netmd",
+  "crates/audiod",
+  "crates/pkgd",
+  "crates/devmand",
+  "crates/inputd",
+  "crates/dispald",
+  "crates/notifd",
+  "crates/powermand",
+  "crates/rauc-rs",
+  "crates/casync-rs",
+  "crates/update-verify",
+  "crates/lunad",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/urip/uos-tv"
+authors = ["UOS TV Contributors"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+ciborium = "0.2"
+
+# Logging & tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+
+# System
+nix = { version = "0.29", features = ["fs", "hostname", "mount", "process", "signal", "ioctl", "reboot"] }
+libc = "0.2"
+
+# IPC / Unix sockets
+tokio-util = { version = "0.7", features = ["codec"] }
+bytes = "1"
+
+# HTTP client (OTA)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+# Crypto (OTA signing)
+ed25519-dalek = "2"
+ring = "0.17"
+
+# Misc
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+hex = "0.4"
+sha2 = "0.10"
+rand_core = { version = "0.6", features = ["getrandom"] }
+futures-util = { version = "0.3", features = ["sink"] }
+tokio-stream = "0.1"
+
+[profile.release]
+opt-level = "s"     # Size-optimized untuk embedded
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 1       # Optimisasi ringan untuk dev yang masih cepat compile

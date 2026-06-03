@@ -1,0 +1,21 @@
+[package]
+name = "lumind"
+version = "0.1.0"
+edition = "2024"
+description = "Lumina Display Server — UOS TV Wayland compositor"
+
+[[bin]]
+name = "lumind"
+path = "src/main.rs"
+
+# NOTE: Full Smithay compositor was replaced with a minimal Cog lifecycle
+# manager for P1. Keeping lumind dependency-light allows static ARM64 builds
+# and QEMU boot without DRM hardware. Future compositor work can reintroduce
+# Smithay after API migration.
+
+[dependencies]
+libc = "0.2"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

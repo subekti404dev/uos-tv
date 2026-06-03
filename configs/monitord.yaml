@@ -1,0 +1,24 @@
+# UOS TV — Service Supervisor Configuration
+# ==========================================
+
+# Directory where service manifest YAMLs live
+services_dir: /usr/share/uos/services.d
+
+# Directory for service log output
+log_dir: /var/log/uos
+
+# PATH for finding binaries
+binary_search_path:
+  - /usr/bin
+  - /usr/local/bin
+  - /usr/sbin
+
+# Timeout waiting for a service to report health check (seconds)
+startup_timeout_secs: 30
+
+# Global crash loop detection
+crash_window_secs: 60
+max_crashes: 5
+
+# Stardust bus socket for health checks
+stardust_socket: /run/uos/bus.sock

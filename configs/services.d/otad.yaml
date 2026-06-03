@@ -1,0 +1,22 @@
+name: otad
+description: "OTA update manager — download, verify, install, reboot"
+binary: /usr/bin/otad
+args:
+  - "--config"
+  - "/etc/uos/ota.yaml"
+  - "--public-key"
+  - "/etc/uos/ota.pub"
+env:
+  - "OTA_SERVER_URL=https://ota.uos-tv.local"
+  - "OTA_CHANNEL=stable"
+dependencies:
+  - stardust
+  - netmd
+  - logd
+after:
+  - pkgd
+restart: always
+restart_delay_ms: 5000
+critical: false
+startup_timeout_secs: 15
+health_check: stardust.otad.ping

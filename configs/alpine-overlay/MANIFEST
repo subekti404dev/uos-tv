@@ -1,0 +1,54 @@
+# UOS TV — Alpine Linux Configuration Overlay
+# =============================================
+#
+# These files are overlaid on top of Alpine minirootfs during
+# image creation. They configure OpenRC, networking, and
+# auto-start of UOS TV services.
+
+# ──────────────────────────────────────────────────────
+# /etc/hostname
+# ──────────────────────────────────────────────────────
+uos-tv
+
+# ──────────────────────────────────────────────────────
+# /etc/hosts
+# ──────────────────────────────────────────────────────
+127.0.0.1   localhost localhost.localdomain
+127.0.1.1   uos-tv uos-tv.local
+::1         localhost localhost.localdomain
+
+# ──────────────────────────────────────────────────────
+# /etc/network/interfaces
+# ──────────────────────────────────────────────────────
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+# ──────────────────────────────────────────────────────
+# /etc/resolv.conf
+# ──────────────────────────────────────────────────────
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+
+# ──────────────────────────────────────────────────────
+# /etc/inittab
+# ──────────────────────────────────────────────────────
+::sysinit:/sbin/rc sysinit
+::sysinit:/sbin/rc boot
+::wait:/sbin/rc default
+::ctrlaltdel:/sbin/reboot
+::shutdown:/sbin/rc shutdown
+tty1::respawn:/sbin/getty 38400 tty1
+ttyAMA0::respawn:/sbin/getty -L 115200 ttyAMA0 vt100
+
+# ──────────────────────────────────────────────────────
+# /usr/share/uos/luna/index.html (minimal launcher)
+# ──────────────────────────────────────────────────────
+(This is the Luna UI shell — served by cog or lumind)
+
+# ──────────────────────────────────────────────────────
+# /.alpine-release
+# ──────────────────────────────────────────────────────
+Alpine Linux 3.21.0 (UOS TV Edition)

@@ -1,0 +1,54 @@
+# UOS TV — Default System Configuration
+# =======================================
+#
+# This file is installed to /data/etc/uos.yaml on first boot.
+# netmd reads this file for network defaults.
+#
+# Fields:
+#   hostname          - TV device name (shown in About screen)
+#   network.interface - Primary network interface ("auto" = first non-loopback)
+#   network.dhcp      - Use DHCP (default: true)
+#   display.width     - Screen width in pixels
+#   display.height    - Screen height in pixels  
+#   display.refresh   - Refresh rate in Hz
+#   update.channel    - OTA update channel (stable/beta/dev)
+#   update.server     - OTA server URL
+#   audio.default_volume - Default volume (0-100)
+#   time.timezone     - IANA timezone
+
+hostname: uos-tv
+locale: en_US.UTF-8
+
+network:
+  interface: auto
+  dhcp: true
+  # static:  # Uncomment for static IP
+  #   address: 192.168.1.100/24
+  #   gateway: 192.168.1.1
+  #   dns:
+  #     - 8.8.8.8
+  #     - 1.1.1.1
+
+display:
+  width: 1920
+  height: 1080
+  refresh: 60
+
+update:
+  channel: stable
+  server: https://updates.uos-tv.io
+
+audio:
+  default_volume: 50
+  output: auto
+
+time:
+  timezone: Asia/Jakarta
+  ntp_servers:
+    - pool.ntp.org
+
+# Developer options (disabled by default)
+developer:
+  adb_enabled: false
+  ssh_enabled: false
+  core_dumps: false

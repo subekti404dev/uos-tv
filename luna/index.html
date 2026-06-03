@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>UOS TV</title>
+<link rel="stylesheet" href="css/shell.css">
+</head>
+<body>
+
+<!-- ====== Boot Splash ====== -->
+<div id="boot-overlay">
+  <div id="boot-content">
+    <div class="logo">UOS</div>
+    <div class="tagline">TV Operating System</div>
+    <div class="spinner"></div>
+  </div>
+</div>
+
+<!-- ====== Top Bar ====== -->
+<div id="topbar" class="flex items-center">
+  <div class="time-widget" id="topbar-time">--:--</div>
+  <div class="spacer"></div>
+  <div class="flex items-center gap-4">
+    <span class="status-icon active" id="status-wifi" title="Network">📶</span>
+    <span class="status-icon" id="status-vol" title="Volume">🔊</span>
+    <span class="status-icon" id="status-notif" title="Notifications (N)" onclick="document.getElementById('notif-overlay').classList.toggle('active');setTimeout(()=>nav.refresh(),50)">🔔</span>
+  </div>
+</div>
+
+<!-- ====== Home Screen ====== -->
+<div id="screen-home" class="screen">
+  <div class="section-label">📺 Apps</div>
+  <div class="card-grid" id="app-grid">
+    <div class="card" tabindex="0" onclick="window.luna._launchApp('com.uos.youtube','YouTube')">
+      <div class="card-icon">▶️</div>
+      <div class="card-title">YouTube</div>
+      <div class="card-desc">Videos, live streams &amp; more</div>
+    </div>
+    <div class="card" tabindex="0" onclick="window.luna._launchApp('com.uos.netflix','Netflix')">
+      <div class="card-icon">🎬</div>
+      <div class="card-title">Netflix</div>
+      <div class="card-desc">Movies &amp; TV shows</div>
+    </div>
+    <div class="card" tabindex="0" onclick="window.luna._launchApp('com.uos.spotify','Spotify')">
+      <div class="card-icon">🎵</div>
+      <div class="card-title">Spotify</div>
+      <div class="card-desc">Music &amp; podcasts</div>
+    </div>
+    <div class="card" tabindex="0" onclick="window.luna._launchApp('com.uos.plex','Plex')">
+      <div class="card-icon">📁</div>
+      <div class="card-title">Plex</div>
+      <div class="card-desc">Personal media library</div>
+    </div>
+    <div class="card" tabindex="0" onclick="window.luna._launchApp('com.uos.twitch','Twitch')">
+      <div class="card-icon">🎮</div>
+      <div class="card-title">Twitch</div>
+      <div class="card-desc">Game streams &amp; esports</div>
+    </div>
+    <div class="card" tabindex="0" onclick="window.luna._launchApp('com.uos.disney','Disney+')">
+      <div class="card-icon">✨</div>
+      <div class="card-title">Disney+</div>
+      <div class="card-desc">Disney, Marvel &amp; Star Wars</div>
+    </div>
+  </div>
+
+  <div class="section-label">⚡ System</div>
+  <div class="card-grid">
+    <div class="card" tabindex="0" onclick="window.luna.showScreen('settings'); window.luna._showSettingsTab('network')">
+      <div class="card-icon">⚙️</div>
+      <div class="card-title">Settings</div>
+      <div class="card-desc">Network, display, audio &amp; more</div>
+    </div>
+    <div class="card" tabindex="0" onclick="window.luna._showToast('Checking for updates...', 'normal')">
+      <div class="card-icon">🔄</div>
+      <div class="card-title">Check for Updates</div>
+      <div class="card-desc">Download &amp; install OTA updates</div>
+      <span class="card-badge">v0.1</span>
+    </div>
+    <div class="card" tabindex="0" onclick="window.luna.showScreen('about')">
+      <div class="card-icon">ℹ️</div>
+      <div class="card-title">About UOS</div>
+      <div class="card-desc">System information &amp; version</div>
+    </div>
+  </div>
+
+  <div class="footer" style="margin-top:40px;text-align:center;padding:20px;color:var(--text-dim);font-size:0.8rem;border-top:1px solid var(--border)">
+    UOS TV · 🦀 Powered by Rust · Press ← → ↑ ↓ to navigate · Enter to select · Esc for home · N for notifications
+  </div>
+</div>
+
+<!-- ====== Settings Screen ====== -->
+<div id="screen-settings" class="screen">
+  <div class="settings-layout">
+    <div class="settings-sidebar settings-nav">
+      <div class="nav-item active" tabindex="0" data-tab="network"
+           onclick="window.luna._showSettingsTab('network')">
+        🌐 Network
+      </div>
+      <div class="nav-item" tabindex="0" data-tab="display"
+           onclick="window.luna._showSettingsTab('display')">
+        📺 Display
+      </div>
+      <div class="nav-item" tabindex="0" data-tab="audio"
+           onclick="window.luna._showSettingsTab('audio')">
+        🔊 Audio
+      </div>
+      <div class="nav-item" tabindex="0" data-tab="system"
+           onclick="window.luna._showSettingsTab('system')">
+        💻 System
+      </div>
+      <div style="margin-top:auto; padding: 14px 24px;">
+        <button class="btn" tabindex="0" onclick="window.luna.showScreen('home')">← Back to Home</button>
+      </div>
+    </div>
+
+    <div class="settings-content">
+      <!-- Network -->
+      <div class="settings-panel active" id="settings-network">
+        <h3>🌐 Network</h3>
+        <div class="setting-row">
+          <div>
+            <div class="label">WiFi</div>
+            <div class="desc">Connect to wireless network</div>
+          </div>
+          <div class="toggle on" tabindex="0" id="toggle-wifi"
+               onclick="this.classList.toggle('on'); window.luna.wifiConnected = this.classList.contains('on'); window.luna._updateStatusBar()"></div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="label">Ethernet</div>
+            <div class="desc">Wired connection (eth0)</div>
+          </div>
+          <span style="color:var(--green)">Connected ✓</span>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="label">IP Address</div>
+            <div class="desc">Current network address</div>
+          </div>
+          <span class="text-dim">10.0.2.15</span>
+        </div>
+      </div>
+
+      <!-- Display -->
+      <div class="settings-panel" id="settings-display">
+        <h3>📺 Display</h3>
+        <div class="setting-row">
+          <div>
+            <div class="label">Brightness</div>
+            <div class="desc" id="brightness-label">80%</div>
+          </div>
+          <input type="range" min="0" max="100" value="80" id="brightness-slider"
+                 oninput="document.getElementById('brightness-label').textContent=this.value+'%'; window.luna.brightness=parseInt(this.value)">
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="label">Night Mode</div>
+            <div class="desc">Warmer color temperature</div>
+          </div>
+          <div class="toggle" tabindex="0" id="toggle-night"
+               onclick="this.classList.toggle('on'); window.luna.nightMode = this.classList.contains('on')"></div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="label">Resolution</div>
+            <div class="desc">Output resolution</div>
+          </div>
+          <span class="text-dim">1920×1080 @ 60Hz</span>
+        </div>
+      </div>
+
+      <!-- Audio -->
+      <div class="settings-panel" id="settings-audio">
+        <h3>🔊 Audio</h3>
+        <div class="setting-row">
+          <div>
+            <div class="label">Volume</div>
+            <div class="desc" id="audio-vol-label">70%</div>
+          </div>
+          <input type="range" min="0" max="100" value="70" id="vol-slider"
+                 oninput="document.getElementById('audio-vol-label').textContent=this.value+'%'; window.luna.setVolume(parseInt(this.value))">
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="label">Audio Output</div>
+            <div class="desc">Select output device</div>
+          </div>
+          <select class="btn" style="padding:6px 12px;font-size:0.85rem">
+            <option>HDMI (Default)</option>
+            <option>Analog</option>
+            <option>Bluetooth</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="label">System Sounds</div>
+            <div class="desc">Navigation &amp; alert sounds</div>
+          </div>
+          <div class="toggle on" tabindex="0" onclick="this.classList.toggle('on')"></div>
+        </div>
+      </div>
+
+      <!-- System -->
+      <div class="settings-panel" id="settings-system">
+        <h3>💻 System</h3>
+        <div class="setting-row">
+          <div>
+            <div class="label">OTA Updates</div>
+            <div class="desc">Automatic update download</div>
+          </div>
+          <div class="toggle on" tabindex="0" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="label">Update Channel</div>
+            <div class="desc">Stable / Beta / Dev</div>
+          </div>
+          <select class="btn" style="padding:6px 12px;font-size:0.85rem">
+            <option selected>Stable</option>
+            <option>Beta</option>
+            <option>Dev</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="label">Idle Timeout</div>
+            <div class="desc">Minutes before screen dims</div>
+          </div>
+          <select class="btn" style="padding:6px 12px;font-size:0.85rem">
+            <option>5 min</option>
+            <option selected>10 min</option>
+            <option>30 min</option>
+            <option>Never</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="label">Factory Reset</div>
+            <div class="desc">Restore to factory defaults</div>
+          </div>
+          <button class="btn danger" tabindex="0" onclick="window.luna._showToast('Factory reset in production build would wipe data', 'high')">
+            Reset
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== About Screen ====== -->
+<div id="screen-about" class="screen">
+  <div style="max-width: 600px;">
+    <h3 style="font-size:1.5rem;font-weight:700;margin-bottom:24px">ℹ️ About UOS TV</h3>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:24px;margin-bottom:20px">
+      <div class="system-info" id="system-info">
+        <div class="row"><span class="key">OS</span><span class="val">UOS TV v0.1.0</span></div>
+        <div class="row"><span class="key">Device</span><span class="val">QEMU virt (Development)</span></div>
+        <div class="row"><span class="key">Architecture</span><span class="val">aarch64 (simulated)</span></div>
+        <div class="row"><span class="key">Kernel</span><span class="val">Linux (Armbian)</span></div>
+        <div class="row"><span class="key">Display</span><span class="val">1920×1080 @ 60Hz</span></div>
+        <div class="row"><span class="key">Compositor</span><span class="val">Lumina (Smithay)</span></div>
+        <div class="row"><span class="key">Shell</span><span class="val">Luna (WPE WebKit)</span></div>
+        <div class="row"><span class="key">Init</span><span class="val">inis v0.1.0</span></div>
+        <div class="row"><span class="key">Update</span><span class="val">RAUC A/B + casync</span></div>
+      </div>
+    </div>
+    <button class="btn" tabindex="0" onclick="window.luna.showScreen('home')">← Back to Home</button>
+  </div>
+</div>
+
+<!-- ====== Volume HUD ====== -->
+<div id="volume-hud">
+  <span id="vol-icon">🔊</span>
+  <div class="vol-bar-bg"><div class="vol-bar-fill" id="vol-fill" style="width:70%"></div></div>
+  <span id="vol-label" style="font-size:0.85rem;color:var(--text-dim)">70%</span>
+</div>
+
+<!-- ====== Notification Overlay ====== -->
+<div id="notif-overlay">
+  <div id="notif-list"></div>
+</div>
+
+<!-- ====== Scripts ====== -->
+<script type="module" src="js/app.js"></script>
+
+<!-- ====== App Overlay (Mock Fullscreen) ====== -->
+<div id="app-overlay">
+  <div id="app-overlay-topbar">
+    <button id="app-back-btn" onclick="window.luna._closeApp()" title="Back (Esc)">← Back</button>
+    <div class="spacer"></div>
+    <span class="status-icon active" title="Network">📶</span>
+    <span id="app-overlay-time" class="time-widget">--:--</span>
+  </div>
+  <div id="app-overlay-content">
+    <div id="app-overlay-icon" class="app-icon-large">📦</div>
+    <div id="app-overlay-name" class="app-name-large">App</div>
+    <div id="app-overlay-id" class="app-id-sub">com.uos.app</div>
+    <p class="app-placeholder">🚧 App akan berjalan di full screen pada device ARM64 asli (Cog/WebKit).<br>Di QEMU ini hanya simulasi UI.</p>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,78 @@
+# UOS TV — Development Services (Docker Compose)
+# ===============================================
+# Runs UOS TV services in containers for dev/testing.
+# Simulates the target environment without QEMU.
+#
+# Usage:
+#   docker compose -f deploy/docker-compose.dev.yml up --build
+#
+# Access:
+#   Luna UI:  http://localhost:8080
+#   WS Bus:   ws://localhost:9090
+
+version: "3.8"
+
+services:
+  stardustd:
+    build:
+      context: ..
+      dockerfile: Dockerfile.cross
+      target: builder
+    command: >
+      sh -c "
+        cargo build -p stardust --release &&
+        ./target/release/stardustd
+          --socket /run/uos/bus.sock
+          --ws-addr 0.0.0.0:9090
+      "
+    ports:
+      - "9090:9090"
+    volumes:
+      - uos-bus:/run/uos
+      - cargo-cache:/usr/local/cargo/registry
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/uos/bus.sock"]
+      interval: 5s
+      retries: 3
+    networks:
+      - uos-net
+
+  logd:
+    build:
+      context: ..
+      dockerfile: Dockerfile.cross
+    command: >
+      sh -c "
+        cargo build -p logd --release &&
+        ./target/release/logd
+          --socket /run/uos/log.sock
+          --log-dir /var/log/uos
+      "
+    volumes:
+      - uos-bus:/run/uos
+      - uos-logs:/var/log/uos
+      - cargo-cache:/usr/local/cargo/registry
+    depends_on:
+      stardustd:
+        condition: service_healthy
+    networks:
+      - uos-net
+
+  luna-ui:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ../luna:/usr/share/nginx/html:ro
+    networks:
+      - uos-net
+
+volumes:
+  uos-bus:
+  uos-logs:
+  cargo-cache:
+
+networks:
+  uos-net:
+    driver: bridge
