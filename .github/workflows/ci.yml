@@ -59,7 +59,8 @@ jobs:
       - name: Cross-build workspace
         run: |
           docker run --rm -v "$PWD:/work" uos-builder \
-            cargo build --release --target aarch64-unknown-linux-musl --workspace
+            cargo build --release --target aarch64-unknown-linux-musl --workspace \
+            --exclude lumind --exclude audiod --exclude inputd
 
       - name: List ARM64 binaries
         run: |
@@ -71,13 +72,10 @@ jobs:
         with:
           name: uos-arm64-binaries
           path: |
-            target/aarch64-unknown-linux-musl/release/audiod
             target/aarch64-unknown-linux-musl/release/devmand
             target/aarch64-unknown-linux-musl/release/dispald
             target/aarch64-unknown-linux-musl/release/inis
-            target/aarch64-unknown-linux-musl/release/inputd
             target/aarch64-unknown-linux-musl/release/logd
-            target/aarch64-unknown-linux-musl/release/lumind
             target/aarch64-unknown-linux-musl/release/lunad
             target/aarch64-unknown-linux-musl/release/monitord
             target/aarch64-unknown-linux-musl/release/netmd

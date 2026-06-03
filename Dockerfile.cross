@@ -38,7 +38,6 @@ RUN dpkg --add-architecture arm64 && \
     gcc-aarch64-linux-gnu \
     binutils-aarch64-linux-gnu \
     libc6-dev-arm64-cross \
-    linux-libc-dev-arm64-cross \
     # QEMU (system emulation + user-mode for testing ARM binaries)
     qemu-user-static \
     qemu-system-arm \
@@ -101,4 +100,4 @@ RUN cd /tmp && \
 WORKDIR /work
 
 # Default: build UOS TV release (exclude lumind — needs native C libs)
-CMD ["sh", "-c", "echo 'Building UOS TV for aarch64-unknown-linux-musl...' && cargo build --release --workspace --exclude lumind"]
+CMD ["sh", "-c", "echo 'Building UOS TV for aarch64-unknown-linux-musl...' && cargo build --release --workspace --exclude lumind --exclude audiod --exclude inputd"]
