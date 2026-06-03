@@ -102,7 +102,7 @@ impl VolumeController {
     fn apply(&self) {
         let long_vol: i64 = self.volume as i64;
 
-        if let (Some(ref mixer), Some(ref selem_id)) = (&self.mixer, &self.master_selem) {
+        if let (Some(mixer), Some(selem_id)) = (&self.mixer, &self.master_selem) {
             if let Some(selem) = mixer.find_selem(selem_id) {
                 let _ = selem.set_playback_switch_all(if self.muted { 0 } else { 1 });
 
