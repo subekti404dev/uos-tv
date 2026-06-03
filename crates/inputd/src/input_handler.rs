@@ -100,7 +100,7 @@ impl InputHandler {
                 match dev.fetch_events() {
                     Ok(events) => {
                         for ev in events {
-                            let input_ev = Self::translate_ev(path, ev);
+                            let input_ev = Self::translate_ev(path, &ev);
                             if let Some(ev) = input_ev {
                                 if event_tx.send(ev).is_err() {
                                     return Ok(());
