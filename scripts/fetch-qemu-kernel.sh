@@ -105,7 +105,7 @@ else
                 cp -r "$TMPDIR/boot/dtbs-lts"/* "$KERNEL_DIR/dtb/" 2>/dev/null || true
             }
         elif command -v 7z &>/dev/null || command -v 7zz &>/dev/null; then
-            local SZ="7z"
+            SZ="7z"
             command -v 7zz &>/dev/null && SZ="7zz"
             $SZ x -o"$TMPDIR" "$ISO" boot/vmlinuz-lts boot/dtbs-lts/ >/dev/null 2>&1 && {
                 cp "$TMPDIR/boot/vmlinuz-lts" "$KERNEL_IMAGE" 2>/dev/null || true
