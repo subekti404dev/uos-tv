@@ -34,9 +34,11 @@ FROM rust:1-slim-bookworm
 # aarch64-linux-gnu-gcc works as linker for Rust's pre-built musl target
 RUN dpkg --add-architecture arm64 && \
     apt-get update && apt-get install -y --no-install-recommends \
-    # Cross-compiler (GNU GCC, used as linker only)
+    # Cross-compiler (GNU GCC, used as linker + C compiler for ring crate)
     gcc-aarch64-linux-gnu \
     binutils-aarch64-linux-gnu \
+    libc6-dev-arm64-cross \
+    linux-libc-dev-arm64-cross \
     # QEMU (system emulation + user-mode for testing ARM binaries)
     qemu-user-static \
     qemu-system-arm \
