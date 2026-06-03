@@ -99,6 +99,7 @@ impl InputHandler {
             for (path, dev) in &mut opened {
                 match dev.fetch_events() {
                     Ok(events) => {
+                        let events: Vec<_> = events.collect();
                         for ev in &events {
                             let input_ev = Self::translate_ev(path, ev);
                             if let Some(ev) = input_ev {
