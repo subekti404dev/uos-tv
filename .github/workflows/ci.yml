@@ -100,7 +100,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            qemu-system-aarch64 qemu-utils genext2fs curl file
+            qemu-system-aarch64 qemu-utils genext2fs curl file \
+            p7zip-full bsdtar
 
       - name: Download ARM64 binaries
         uses: actions/download-artifact@v4

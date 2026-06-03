@@ -97,24 +97,28 @@ else
     ISO="$TMPDIR/alpine.iso"
 
     if curl -sL --connect-timeout 10 --max-time 120 "$ALPINE_KERNEL_URL" -o "$ISO" 2>/dev/null; then
-        # Extract kernel from ISO
-        mkdir -p "$TMPDIR/mnt"
-        if command -v hdiutil &>/dev/null; then
-            # macOS
-            hdiutil attach -mountpoint "$TMPDIR/mnt" "$ISO" >/dev/null 2>&1 && {
-                cp "$TMPDIR/mnt/boot/vmlinuz-lts" "$KERNEL_IMAGE" 2>/dev/null || true
+        # Extract kernel from ISO without mounting (use bsdtar/7z/unzip)
+        if command -v bsdtar &>/dev/null; then
+            bsdtar -xf "$ISO" -C "$TMPDIR" boot/vmlinuz-lts boot/dtbs-lts/ 2>/dev/null && {
+                cp "$TMPDIR/boot/vmlinuz-lts" "$KERNEL_IMAGE" 2>/dev/null || true
                 mkdir -p "$KERNEL_DIR/dtb"
-                cp -r "$TMPDIR/mnt/boot/dtbs-lts"/* "$KERNEL_DIR/dtb/" 2>/dev/null || true
-                hdiutil detach "$TMPDIR/mnt" >/dev/null 2>&1
+                cp -r "$TMPDIR/boot/dtbs-lts"/* "$KERNEL_DIR/dtb/" 2>/dev/null || true
             }
-        elif command -v mount &>/dev/null; then
-            # Linux
-            mount -o loop "$ISO" "$TMPDIR/mnt" 2>/dev/null && {
-                cp "$TMPDIR/mnt/boot/vmlinuz-lts" "$KERNEL_IMAGE" 2>/dev/null || true
+        elif command -v 7z &>/dev/null; then
+            7z x -o"$TMPDIR" "$ISO" boot/vmlinuz-lts boot/dtbs-lts/ >/dev/null 2>&1 && {
+                cp "$TMPDIR/boot/vmlinuz-lts" "$KERNEL_IMAGE" 2>/dev/null || true
                 mkdir -p "$KERNEL_DIR/dtb"
-                cp -r "$TMPDIR/mnt/boot/dtbs-lts"/* "$KERNEL_DIR/dtb/" 2>/dev/null || true
-                umount "$TMPDIR/mnt" 2>/dev/null
+                cp -r "$TMPDIR/boot/dtbs-lts"/* "$KERNEL_DIR/dtb/" 2>/dev/null || true
             }
+        elif command -v python3 &>/dev/null; then
+            # Python isodextract fallback
+            python3 -c "
+import struct, sys
+with open('$ISO', 'rb') as f:
+    data = f.read()
+    idx = data.find(b'vmlinuz-lts')
+    print(f'Found vmlinuz-lts at offset {idx}' if idx > 0 else 'Not found')
+" 2>/dev/null
         fi
     fi
     rm -rf "$TMPDIR"
