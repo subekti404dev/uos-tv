@@ -106,6 +106,7 @@ build_rtl8189es() {
     # Cross-compile with kernel build system
     info "Compiling 8189es.ko..."
     make ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
+        KCFLAGS="-Wno-error" \
         -C "$KERNEL_DIR" M="$PWD" \
         modules -j"$(nproc 2>/dev/null || echo 4)" 2>&1 | tail -5
 
@@ -184,6 +185,7 @@ build_rtl8189fs() {
 
     info "Compiling 8189fs.ko..."
     make ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
+        KCFLAGS="-Wno-error" \
         -C "$KERNEL_DIR" M="$PWD" \
         modules -j"$(nproc 2>/dev/null || echo 4)" 2>&1 | tail -5
 
@@ -220,6 +222,7 @@ build_rtl8723bs() {
         info "Building RTL8723BS from staging..."
         cd "$KERNEL_DIR"
         make ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
+            KCFLAGS="-Wno-error" \
             M=drivers/staging/rtl8723bs \
             modules -j"$(nproc 2>/dev/null || echo 4)" 2>&1 | tail -3
         if [ -f "$KERNEL_DIR/drivers/staging/rtl8723bs/r8723bs.ko" ]; then
