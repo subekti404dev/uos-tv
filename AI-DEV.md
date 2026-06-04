@@ -199,7 +199,35 @@ KERNEL=build/kernel/alpine-vmlinuz INITRD=build/kernel/alpine-initramfs TIMEOUT_
 
 **Critical difference from QEMU**: With Mali-450 GPU + lima + Mesa, **Cog/WPE WebKit can render the Luna UI natively on screen via HDMI**. This is the target deployment platform.
 
-**Board**: Generic `meson-gxl-s905x-p212` device tree. Most Android TV boxes use this reference design. DTB = `meson-gxl-s905x-p212.dtb`.
+**Board**: Generic `meson-gxl-s905x-p212` device tree. Most Android TV boxes use this reference design.
+
+**DTB Identification**:
+
+```
+Box        | DTB                             | SoC Variant | Verified
+-----------+----------------------------------+-------------+----------
+B860H      | meson-gxl-s905x-p212.dtb         | S905X-B     | ✅ Same DTB (minor silicon rev)
+HG680P     | meson-gxl-s905x-p212.dtb         | S905X       | ✅ Generic p212 ref board
+Nexbox-A95X| meson-gxl-s905x-nexbox-a95x.dtb  | S905X       | ✅ Box-specific DTB
+LibreTech-CC|meson-gxl-s905x-libretech-cc.dtb  | S905X       | ✅ Board-specific DTB
+Khadas-VIM | meson-gxl-s905x-khadas-vim.dtb   | S905X       | ✅ Board-specific DTB
+```
+
+**p212 DTS structure** (what's included):
+- `meson-gxl-s905x-p212.dts` → `meson-gxl-s905x-p212.dtsi` → `meson-gxl-s905x.dtsi` → `meson-gxl.dtsi` + `meson-gxl-mali.dtsi`
+- SDIO WiFi: `&sd_emmc_a`, bus-width 4, max 50MHz, pwrseq on GPIOX_6
+- IR: `&ir` with `remote_input_ao_pins` (meson-ir driver)
+- Ethernet: `&ethmac` internal RMII PHY, 100Mbps
+- RAM: 2GB (matches both B860H and HG680P)
+- Serial: uart_AO @ 115200n8
+- Bluetooth: uart_A for BCM43438 (p212 dev board only — disable for B860H/HG680P)
+
+**⚠️ Verify on actual hardware**:
+1. WiFi reset GPIO — p212 uses GPIOX_6; some STB boxes use GPIOX_7 or GPIOX_8
+2. SD card detect — p212 uses CARD_6 GPIO
+3. LED GPIOs — not in p212 DTS; boxes have power/status LEDs
+4. Recovery button — not in p212 DTS; add gpio-keys node
+5. IR keymap — meson-ir works but may need custom rc-keymap per remote
 
 **WiFi Drivers**: Out-of-tree kernel modules for some chips.
 

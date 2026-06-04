@@ -39,22 +39,70 @@ ARMBIAN_RELEASE="bookworm"
 
 # ── Board Database ───────────────────────────────────
 # Each board: name, DTB, WiFi chip, RAM, special notes
-# Format: "NAME|DTB|WIFI_CHIP|RAM|NOTES"
+# Formats: "NAME|DTB|WIFI_CHIP|RAM|NOTES"
+# ═══════════════════════════════════════════════════════
+# DTB Identification Notes:
+# ═══════════════════════════════════════════════════════
+# The mainline kernel has these S905X DTBs (linux/arch/arm64/boot/dts/amlogic/):
+#
+#   meson-gxl-s905x-p212.dtb        — Generic p212 reference board ← B860H, HG680P
+#   meson-gxl-s905x-nexbox-a95x.dtb  — Nexbox A95X (different WiFi, LED)
+#   meson-gxl-s905x-libretech-cc.dtb — LibreTech CC (La Frite)
+#   meson-gxl-s905x-khadas-vim.dtb   — Khadas VIM
+#   meson-gxl-s905x-hwacom-amazetv.dtb — HwaCom Amazetv
+#   meson-gxl-s905x-vero4k.dtb       — OSMC Vero 4K
+#
+# p212 DTS includes (meson-gxl-s905x-p212.dtsi):
+#   - SoC:        meson-gxl-s905x.dtsi → meson-gxl.dtsi + meson-gxl-mali.dtsi
+#   - RAM:        2GB (0x80000000) — matches B860H and HG680P
+#   - Serial:     uart_AO @ 115200n8 (GPIO header)
+#   - SDIO WiFi:  sd_emmc_a, bus-width 4, max 50MHz, pwrseq GPIOX_6
+#   - SD card:    sd_emmc_b, CD on CARD_6 GPIO
+#   - eMMC:       sd_emmc_c, bus-width 8, HS200
+#   - Ethernet:   ethmac, internal RMII PHY (100Mbps)
+#   - IR:         meson-ir on remote_input_ao_pins
+#   - HDMI:       hdmi_tx with HPD/I2C pins, CEC on ao_cec_pins
+#   - USB:        host mode, USB2 phy0 supplied by HDMI_5V
+#   - Bluetooth:  uart_A → BCM43438 (p212 dev board only!)
+#
+# B860H (S905X-B, ZTE):
+#   - S905X-B is minor silicon revision — same DTB compatible!
+#   - DTB: meson-gxl-s905x-p212.dtb ✅
+#   - WiFi: RTL8189ES SDIO on sd_emmc_a (p212 has SDIO slot ready)
+#     ⚠️  GPIOX_6 for WiFi reset (verify on actual hardware)
+#   - IR: meson-ir ✅ (standard p212)
+#   - RAM: 2GB ✅ (matches p212 memory node)
+#   - No Bluetooth (skip uart_A node)
+#
+# HG680P (S905X):
+#   - DTB: meson-gxl-s905x-p212.dtb ✅
+#   - WiFi: RTL8189FS SDIO on sd_emmc_a
+#     ⚠️  GPIOX_6 for WiFi reset (verify on actual hardware)
+#   - IR: meson-ir ✅ (standard p212)
+#   - RAM: 2GB ✅ (matches p212 memory node)
+#   - No Bluetooth (skip uart_A node)
+#
+# TO VERIFY ON ACTUAL HARDWARE:
+#   1. WiFi reset GPIO (GPIOX_6) — check if correct, some boxes use GPIOX_7
+#   2. SD card detect GPIO (CARD_6) — should auto-work with mmc subsystem
+#   3. LED GPIO (power LED) — add gpio-leds node if known
+#   4. Recovery button GPIO — add gpio-keys node if known
+#   5. IR keymap — meson-ir works but rc-keymap may need customization
+# ═══════════════════════════════════════════════════════
 declare -A BOARD_DB
 while IFS='|' read -r _name _dtb _wifi _ram _notes; do
     [[ -z "$_name" || "$_name" == \#* ]] && continue
     BOARD_DB["${_name,,}"]="$_dtb|$_wifi|$_ram|$_notes"
 done << 'BOARDS'
 # name     | dtb                        | wifi_chip    | ram | notes
-B860H       | meson-gxl-s905x-p212       | rtl8189es    | 2GB | ZTE B860H v1.1/v2.1, S905X-B, meson-ir
-HG680P      | meson-gxl-s905x-p212       | rtl8189fs    | 2GB | HG680P, S905X, RTL8189FS variant
+B860H       | meson-gxl-s905x-p212       | rtl8189es    | 2GB | ZTE B860H v1.1/v2.1, S905X-B, SDIO WiFi, meson-ir
+HG680P      | meson-gxl-s905x-p212       | rtl8189fs    | 2GB | HG680P, S905X, SDIO WiFi, meson-ir
 NEXBOX-A95X | meson-gxl-s905x-nexbox-a95x | rtl8723bs   | 2GB | Nexbox A95X
 LIBRETECH-CC| meson-gxl-s905x-libretech-cc| rtl8723bs   | 1GB | Libre Computer La Frite
-KHADAS-VIM  | meson-gxl-s905x-khadas-vim  | broadcom    | 2GB | Khadas VIM
+KHADAS-VIM  | meson-gxl-s905x-khadas-vim  | broadcom    | 2GB | Khadas VIM (BCM43430 SDIO, Bluetooth)
 BOARDS
 
-# Current target (set via --board flag)
-BOARD="${BOARD:-p212}"
+# Default to generic p212
 DTB="meson-gxl-s905x-p212"
 
 # GPU: Mali-450 needs:
@@ -105,6 +153,18 @@ show_compatibility() {
     echo ""
     echo "  ❌ Not supported: S905 (non-X), S905W, S905D"
     echo "  ⚠️  S905X2/S905X3: different SoC (g12a/g12b) — need different DTB"
+    echo ""
+    echo "  ═══ DTB Verification ═══"
+    echo "  ✅ B860H  → meson-gxl-s905x-p212.dtb (generic p212)"
+    echo "     S905X-B revision, 2GB RAM, RTL8189ES SDIO"
+    echo "  ✅ HG680P → meson-gxl-s905x-p212.dtb (generic p212)"
+    echo "     S905X, 2GB RAM, RTL8189FS SDIO"
+    echo ""
+    echo "  ⚠️  Verify on hardware:"
+    echo "     - WiFi reset GPIO: GPIOX_6 (p212 default)"
+    echo "     - SD card detect GPIO: CARD_6"
+    echo "     - IR keymap: meson-ir default (may need rc-keymap)"
+    echo "     - LED/button GPIOs: not in p212 DTS (add overlay)"
     echo ""
 }
 
