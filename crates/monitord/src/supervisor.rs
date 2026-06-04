@@ -2,9 +2,9 @@
 //!
 //! Manages startup, monitoring, restart, and shutdown of all services.
 
+use dashmap::DashMap;
 use monitord::graph::DependencyGraph;
 use monitord::manifest::{RestartPolicy, ServiceManifest};
-use dashmap::DashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
