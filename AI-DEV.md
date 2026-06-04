@@ -6,7 +6,7 @@
 
 **UOS TV** is a Rust-based embedded Linux operating system for Smart TVs, running on ARM64 (aarch64) devices. It uses a microservice architecture with an IPC message broker (Stardust), an init system (inis), a process supervisor (monitord), and a web-based UI (Luna).
 
-- **Language**: Rust (2021 edition), statically linked via musl for ARM64
+- **Language**: Rust (2021 edition), statically linked via musl for ARM64 (19 crates)
 - **Target**: `aarch64-unknown-linux-musl`
 - **QEMU Machine**: `virt`, `cortex-a57`, 512MB RAM
 - **CI**: GitHub Actions (cross-compile + QEMU smoke test)
@@ -31,7 +31,15 @@
    └──────┘ └─────┘ └──────┘ └───────┘
 ```
 
-### Boot Chain
+### Boot Chain (S905X)
+```
+BootROM → u-boot (boot.scr / extlinux) → Linux + DTB (p212-uos)
+  → inis (PID 1, mounts /, remount RO) → monitord (DAG supervisor)
+    → wifid (one-shot: probe SDIO → insmod → wait wlan0 → exit)
+    → stardustd → netmd → 12 other services → Luna UI on HDMI
+```
+
+### Boot Chain (QEMU)
 ```
 Alpine Linux kernel → Alpine Init → inis (PID 1) → monitord → 14 services
 ```
@@ -63,15 +71,16 @@ Alpine Linux kernel → Alpine Init → inis (PID 1) → monitord → 14 service
 ## Key Files
 
 ### Configuration
-- `configs/services.d/*.yaml` — Service manifests (14 services). Each defines binary, args, dependencies, caps, health_check
+- `configs/services.d/*.yaml` — Service manifests (15 services). Each defines binary, args, dependencies, caps, health_check
 - `configs/monitord.yaml` — Supervisor config
 - `configs/system.yaml` — System-level settings
+- `configs/dts/b860h-hg680p-wifi.dtso` — DTS overlay (disable BT, SDIO WiFi)
 - `configs/alpine-overlay/` — Alpine Linux overlay files
 
 ### Build & CI
-- `Cargo.toml` — Workspace definition with 18 crates
+- `Cargo.toml` — Workspace definition with 19 crates
 - `Cargo.lock` — Locked dependency versions
-- `Makefile` — Common tasks: `make build`, `make qemu`, `make ci-qemu-smoke`, `make cross-build`
+- `Makefile` — Common tasks: `make build`, `make qemu`, `make ci-qemu-smoke`, `make cross-build`, `make wifi-s905x`
 - `Dockerfile.cross` — Docker image for cross-compiling to aarch64-musl
 - `Dockerfile.lumind` — Docker image for lumind build (experimental)
 - `.github/workflows/ci.yml` — CI pipeline: format, clippy, test, cross-build, QEMU smoke
@@ -130,7 +139,7 @@ docker build -t uos-builder -f Dockerfile.cross .
 docker run --rm -v "$PWD:/work" uos-builder cargo build --release --target aarch64-unknown-linux-musl --workspace
 
 # Deploy binaries to rootfs
-for bin in inis monitord stardustd lunad audiod inputd netmd notifd otad pkgd logd dispald devmand powermand lumind cog; do
+for bin in inis monitord stardustd lunad audiod inputd netmd notifd otad pkgd logd dispald devmand powermand lumind wifid; do
   cp target/aarch64-unknown-linux-musl/release/$bin build/alpine-rootfs-extracted/usr/bin/
 done
 
@@ -170,7 +179,7 @@ KERNEL=build/kernel/alpine-vmlinuz INITRD=build/kernel/alpine-initramfs TIMEOUT_
 2. **lumind (Smithay)** — Full Wayland compositor deferred. Current version is a minimal display manager that scans DRM/input and launches Cog.
 3. **audiod** — ALSA backend works but needs real sound hardware. QEMU has no sound card. S905X has an HDMI audio output via meson audio driver.
 4. **inputd** — evdev scanning works but QEMU has no input devices. IR remote on S905X is supported via meson-ir driver, exposed as `/dev/input/event*`.
-5. **netmd WiFi** — Uses `wpa_cli`. No WiFi in QEMU; Ethernet-only. S905X boxes typically have RTL8723BS or Broadcom WiFi.
+5. **netmd WiFi** — Uses `wpa_cli` + `wpa_supplicant`. `wifid` loads kernel modules (8189es.ko etc) at boot. No WiFi in QEMU; Ethernet-only. S905X boxes have Realtek or Broadcom SDIO WiFi. Config at `/etc/wpa_supplicant/wpa_supplicant.conf`.
 6. **Read-only rootfs** — inis remounts `/` as RO after boot. Busybox httpd incompatible; use Rust `lunad` instead.
 7. **Capability dropping** — Services needing port bind must have `caps.keep: [net_bind_service]` in manifest.
 8. **cap_last_cap** — macOS libc lacks newer Linux capabilities (BPF, CHECKPOINT_RESTORE). Use raw numbers (0-40) in `sec.rs`.
@@ -194,8 +203,14 @@ KERNEL=build/kernel/alpine-vmlinuz INITRD=build/kernel/alpine-initramfs TIMEOUT_
 
 **Build for S905X**:
 ```bash
-./scripts/bootstrap-s905x.sh --all        # Full build (kernel + rootfs + SD image)
-./scripts/bootstrap-s905x.sh --kernel-docker  # Docker-based kernel cross-compile
+./scripts/bootstrap-s905x.sh --all                 # Full build (kernel + rootfs + SD image)
+./scripts/bootstrap-s905x.sh --board b860h          # Build for B860H specifically
+./scripts/bootstrap-s905x.sh --board hg680p          # Build for HG680P specifically
+./scripts/bootstrap-s905x.sh --kernel-docker         # Docker-based kernel cross-compile
+./scripts/bootstrap-s905x.sh --wifi                  # Build all WiFi drivers + firmware
+./scripts/build-s905x-wifi.sh --chip rtl8189es       # Build single WiFi chip
+
+make wifi-s905x                                      # Quick: kernel + WiFi drivers
 ```
 
 **Critical difference from QEMU**: With Mali-450 GPU + lima + Mesa, **Cog/WPE WebKit can render the Luna UI natively on screen via HDMI**. This is the target deployment platform.
@@ -247,7 +262,6 @@ Khadas-VIM | meson-gxl-s905x-khadas-vim.dtb   | S905X       | ✅ Board-specific
 - `brcm/brcmfmac43430-sdio.bin` — for BCM43430
 
 **WiFi build**:
-**WiFi boot chain on S905X**:
 1. Linux boots → MMC subsystem loads → SDIO bus scanned
 2. `wifid` service starts → detects Realtek chip on SDIO → `insmod 8189es.ko`
 3. Module loads firmware from `/lib/firmware/rtlwifi/`
@@ -331,7 +345,8 @@ uos/
 ├── configs/
 │   ├── monitord.yaml
 │   ├── system.yaml
-│   ├── services.d/        ← 14 service YAML manifests
+│   ├── services.d/        ← 15 service YAML manifests
+│   ├── dts/               ← Device tree overlays (S905X)
 │   └── alpine-overlay/
 ├── crates/
 │   ├── stardust/          ← IPC broker (lib + bin)
@@ -349,6 +364,7 @@ uos/
 │   ├── dispald/           ← Display daemon
 │   ├── devmand/           ← Device manager
 │   ├── powermand/         ← Power daemon
+│   ├── wifid/             ← WiFi module loader (one-shot)
 │   ├── casync-rs/         ← CASync library
 │   ├── rauc-rs/           ← RAUC library
 │   └── update-verify/     ← Update verification
@@ -371,7 +387,9 @@ uos/
 │   ├── ota-create-bundle.sh
 │   ├── dev-run.sh
 │   ├── bootstrap-armbian.sh
-│   └── build-cog.sh
+│   ├── bootstrap-s905x.sh  ← S905X full-system builder
+│   ├── build-cog.sh
+│   └── build-s905x-wifi.sh  ← S905X WiFi driver builder
 ├── tests/
 │   └── integration.rs
 ├── deploy/
@@ -403,7 +421,7 @@ open http://localhost:8080/
 
 ## Test Status (Last Verified: 2026-06-04)
 
-- `cargo test --workspace`: **64 passed, 3 ignored, 0 failed**
+- `cargo test --workspace`: **56 passed, 3 ignored, 0 failed**
 - QEMU smoke: **14 services OK, boot ~10-13s, Luna HTTP 200**
-- All P0 (3/3), P1 (6/6), P2 (8/8) tasks complete
+- All P0 (3/3), P1 (6/6), P2 (9/9) tasks complete
 - CI/CD pipeline: GitHub Actions (format, clippy, test, cross-build, QEMU smoke)

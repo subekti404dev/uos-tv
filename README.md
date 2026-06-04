@@ -7,7 +7,10 @@ UOS TV is a **Rust-based embedded Linux operating system** for Smart TVs, target
 ## Architecture
 
 ```
-inis (PID 1) → monitord (supervisor) → 14 microservices
+S905X Boot: BootROM → u-boot → Linux + DTB → inis PID 1 → monitord
+                  → wifid (modules) → stardustd → netmd + 11 services
+
+QEMU Boot: Alpine kernel → inis PID 1 → monitord → 14 services
                   ↓
            stardustd (IPC broker)
             ↙        ↓        ↘
@@ -17,6 +20,7 @@ inis (PID 1) → monitord (supervisor) → 14 microservices
 - **stardustd** — IPC message broker (Unix socket + WebSocket)
 - **monitord** — Process supervisor with DAG boot, health checks, watchdog
 - **inis** — PID 1 init system
+- **wifid** — WiFi module loader (one-shot, loads Realtek/Broadcom SDIO .ko)
 - **Luna** — HTML/CSS/JS web UI with D-pad navigation
 - **Cog** — WPE WebKit browser engine for app rendering (needs real GPU)
 
@@ -27,12 +31,17 @@ inis (PID 1) → monitord (supervisor) → 14 microservices
 cargo build --workspace
 
 # Test
-cargo test --workspace   # 64 passed, 0 failed
+cargo test --workspace   # 56 passed, 0 failed
 
 # Cross-compile for ARM64 (Docker)
 docker build -t uos-builder -f Dockerfile.cross .
 docker run --rm -v "$PWD:/work" uos-builder \
   cargo build --release --target aarch64-unknown-linux-musl --workspace
+
+# Build S905X system image (for set-top boxes)
+./scripts/bootstrap-s905x.sh --board b860h     # Build for ZTE B860H
+./scripts/bootstrap-s905x.sh --board hg680p    # Build for HG680P
+./scripts/bootstrap-s905x.sh --all             # Build for all boards
 
 # Run in QEMU
 KERNEL=build/kernel/alpine-vmlinuz \
@@ -43,7 +52,7 @@ KERNEL=build/kernel/alpine-vmlinuz \
 open http://localhost:8080/
 ```
 
-## Crates (18)
+## Crates (19)
 
 | Crate | Description |
 |-------|-------------|
@@ -53,6 +62,7 @@ open http://localhost:8080/
 | `lunad` | HTTP static file server (Luna UI) |
 | `lumind` | Display manager (DRM/Cog launcher) |
 | `netmd` | Network daemon (WiFi/Ethernet) |
+| `wifid` | WiFi module loader — SDIO probe, insmod, one-shot |
 | `audiod` | Audio daemon (ALSA volume/mute) |
 | `inputd` | Input daemon (evdev/IR remote) |
 | `notifd` | Notification daemon |
@@ -65,6 +75,26 @@ open http://localhost:8080/
 | `casync-rs` | Content-addressable chunking |
 | `rauc-rs` | RAUC A/B update support |
 | `update-verify` | OTA verification |
+
+## Supported Hardware
+
+| Target | SoC | GPU | WiFi | Status |
+|--------|-----|-----|------|--------|
+| **ZTE B860H** | S905X-B | Mali-450 | RTL8189ES SDIO | ✅ Build ready |
+| **HG680P** | S905X | Mali-450 | RTL8189FS SDIO | ✅ Build ready |
+| Nexbox A95X | S905X | Mali-450 | RTL8723BS SDIO | ✅ Build ready |
+| LibreTech CC | S905X | Mali-450 | RTL8723BS SDIO | ✅ Build ready |
+| Khadas VIM | S905X | Mali-450 | BCM43430 SDIO | ✅ Build ready |
+| QEMU virt | Cortex-A57 | None (headless) | None | ✅ CI daily |
+
+```bash
+# Build for specific board (auto DTB + WiFi chip)
+./scripts/bootstrap-s905x.sh --board b860h
+
+# Build all WiFi drivers
+make wifi-s905x
+./scripts/build-s905x-wifi.sh --chip rtl8189es
+```
 
 ## Requirements
 

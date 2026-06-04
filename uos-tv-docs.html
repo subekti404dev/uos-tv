@@ -144,7 +144,7 @@
 
 <!-- ════════════════ STATS ════════════════ -->
 <div class="stat-grid">
-  <div class="stat-card"><div class="num">17</div><div class="label">Rust crates</div></div>
+  <div class="stat-card"><div class="num">19</div><div class="label">Rust crates</div></div>
   <div class="stat-card"><div class="num">16</div><div class="label">ARM64 ELF binaries</div></div>
   <div class="stat-card"><div class="num">18.2 MB</div><div class="label">Total binary size</div></div>
   <div class="stat-card"><div class="num">10,340</div><div class="label">Total lines of code</div></div>
@@ -243,7 +243,7 @@ All IPC through <code>stardust</code> — a custom CBOR-over-Unix-socket message
 
 <!-- ════════════════ CRATE DETAILS ════════════════ -->
 <h2>📦 Rust Crates</h2>
-<p>17 member crates in Cargo workspace. 16 cross-compile to ARM64 musl. <code>lumind</code> requires native aarch64 sysroot (DRM/GBM/libinput).</p>
+<p>19 member crates in Cargo workspace. 18 cross-compile to ARM64 musl. <code>lumind</code> requires native aarch64 sysroot (DRM/GBM/libinput). <code>wifid</code> is pure Rust (zero dependencies).</p>
 
 <table>
   <thead>
@@ -255,8 +255,9 @@ All IPC through <code>stardust</code> — a custom CBOR-over-Unix-socket message
     <tr><td><strong>monitord</strong></td><td>monitord</td><td>1.3 MB</td><td>Process supervisor. YAML manifests, DAG topological sort for dependency ordering, crash-loop detection, parallel startup.</td></tr>
     <tr><td><strong>logd</strong></td><td>logd</td><td>644 KB</td><td>Logging daemon. Unix socket receiver, JSON Lines output, daily rotation, /dev/kmsg forwarding.</td></tr>
     <tr><td><strong>otad</strong></td><td>otad</td><td>2.7 MB</td><td>OTA daemon. State machine (Idle→Checking→Downloading→Verifying→Installing→Rebooting), HTTP resume download, SHA256 verification, RAUC integration.</td></tr>
-    <tr><td><strong>netmd</strong></td><td>netmd</td><td>1.0 MB</td><td>Network manager. Parses /sys/class/net, WiFi/Ethernet detection, interface state tracking, stardust pub/sub.</td></tr>
-    <tr><td><strong>audiod</strong></td><td>audiod</td><td>1.1 MB</td><td>Audio manager. Volume up/down/mute/toggle, pactl integration, parking_lot Mutex, stardust command subscription.</td></tr>
+    <tr><td><strong>netmd</strong></td><td>netmd</td><td>1.0 MB</td><td>Network manager. Parses /sys/class/net, WiFi/Ethernet detection, interface state tracking, stardust pub/sub, wpa_cli integration.</td></tr>
+    <tr><td><strong>wifid</strong></td><td>wifid</td><td>&lt;1 MB</td><td>WiFi module loader (one-shot). Detects SDIO WiFi chip via /sys/bus/sdio/devices, insmod kernel module, waits for wlan0, publishes ready event, exits. Handles RTL8189ES/FS, RTL8723BS, BCM43430.</td></tr>
+    <tr><td><strong>audiod</strong></td><td>audiod</td><td>1.1 MB</td><td>Audio manager. Volume up/down/mute/toggle, ALSA mixer integration, parking_lot Mutex, stardust command subscription.</td></tr>
     <tr><td><strong>inputd</strong></td><td>inputd</td><td>966 KB</td><td>Input daemon. Remote key mapping (evdev → RemoteKey enum: Up/Down/Left/Right/OK/Back/Home/Menu).</td></tr>
     <tr><td><strong>dispald</strong></td><td>dispald</td><td>1.0 MB</td><td>Display daemon. Backlight control via /sys/class/backlight/, brightness slider, night mode toggle.</td></tr>
     <tr><td><strong>notifd</strong></td><td>notifd</td><td>1.0 MB</td><td>Notification daemon. Priority levels (low/normal/high/critical), UUID-based IDs, auto-dismiss overlay.</td></tr>
@@ -686,6 +687,9 @@ No native C dependencies needed for 16/17 crates.
   <li>✅ Parse scan_results, list_networks, status, signal_poll outputs</li>
   <li>✅ 4 WiFi parsing unit tests</li>
   <li>✅ Graceful fallback when no wpa_supplicant available</li>
+  <li>✅ wifid service (one-shot module loader) runs before netmd</li>
+  <li>✅ wpa_supplicant.conf template at /etc/wpa_supplicant/</li>
+  <li>✅ Kernel config: CFG80211, MAC80211, MMC_SDIO, RFKILL, WEXT</li>
 </ul>
 </div>
 
@@ -783,7 +787,9 @@ No native C dependencies needed for 16/17 crates.
   <div class="roadmap-priority" style="background:#22c55e">✅</div>
   <div>
     <strong>S905X WiFi Driver Integration</strong> <em>(2026-06-04: DONE)</em>
-    <p>Out-of-tree kernel modules for RTL8189ES (B860H) dan RTL8189FS (HG680P). Build script: scripts/build-s905x-wifi.sh. Cross-compile with kernel headers. Firmware auto-download dari linux-firmware repo. Amlogic S905 SDIO platform support via OpenIPC/realtek-wlan. Board database: 5 supported STB models. Makefile target: make wifi-s905x.</p>
+    <p>Out-of-tree kernel modules for RTL8189ES (B860H) and RTL8189FS (HG680P). Build script: <code>scripts/build-s905x-wifi.sh</code>. Cross-compile with kernel headers. Firmware auto-download from linux-firmware repo. Amlogic S905 SDIO platform support via OpenIPC/realtek-wlan.</p>
+    <p><strong>Full boot chain:</strong> wifid (SDIO probe→insmod→wait wlan0) → netmd (wpa_supplicant→wpa_cli→scan/connect). DTS overlay disables Bluetooth on uart_A. Kernel modules in <code>/lib/modules/&lt;ver&gt;/extra/</code>. depmod for modprobe support. wpa_supplicant.conf template. u-boot boot.scr.</p>
+    <p><strong>Usage:</strong> <code>./scripts/bootstrap-s905x.sh --board b860h</code> | <code>./scripts/bootstrap-s905x.sh --board hg680p</code> | <code>make wifi-s905x</code></p>
   </div>
 </div>
 
