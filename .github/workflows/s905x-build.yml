@@ -302,6 +302,8 @@ jobs:
         run: |
           mkdir -p "$ROOTFS_DIR"
           tar xzf /tmp/alpine-rootfs.tar.gz -C "$ROOTFS_DIR"
+          # Alpine tarball preserves root ownership — fix for CI runner
+          sudo chown -R "$(id -u):$(id -g)" "$ROOTFS_DIR"
 
           mkdir -p "$ROOTFS_DIR/usr/bin" "$ROOTFS_DIR/sbin"
           BIN_DIR="target/aarch64-unknown-linux-musl/release"
