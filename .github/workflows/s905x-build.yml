@@ -146,6 +146,7 @@ jobs:
       - name: Clone Linux kernel (6.6)
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
+          rm -rf "$KERNEL_DIR"
           git clone --depth=1 --branch v6.6 \
             https://github.com/torvalds/linux.git "$KERNEL_DIR"
 
