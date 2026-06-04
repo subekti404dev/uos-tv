@@ -30,8 +30,6 @@ jobs:
     name: Rust ARM64 Cross-Compile
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    outputs:
-      artifact-name: ${{ steps.upload.outputs.artifact-name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -279,30 +277,13 @@ jobs:
 
           # wpa_supplicant config
           mkdir -p "$ROOTFS_DIR/etc/wpa_supplicant"
-          cat > "$ROOTFS_DIR/etc/wpa_supplicant/wpa_supplicant.conf" << 'WPA'
-ctrl_interface=/var/run/wpa_supplicant
-update_config=1
-country=ID
-WPA
+          printf 'ctrl_interface=/var/run/wpa_supplicant\nupdate_config=1\ncountry=ID\n' \
+            > "$ROOTFS_DIR/etc/wpa_supplicant/wpa_supplicant.conf"
 
           # extlinux.conf
           mkdir -p "$ROOTFS_DIR/boot"
-          cat > "$ROOTFS_DIR/boot/extlinux.conf" << 'EXTLINUX'
-TIMEOUT 30
-DEFAULT uos-tv
-
-LABEL uos-tv
-  MENU LABEL UOS TV (S905X)
-  LINUX /Image
-  FDT /meson-gxl-s905x-p212-uos.dtb
-  APPEND console=ttyAML0,115200 root=/dev/mmcblk0p2 rw rootfstype=ext4 init=/sbin/init uos.console=ttyAML0
-
-LABEL uos-tv-fallback
-  MENU LABEL UOS TV (fallback)
-  LINUX /Image
-  FDT /meson-gxl-s905x-p212.dtb
-  APPEND console=ttyAML0,115200 root=/dev/mmcblk0p2 rw rootfstype=ext4 init=/sbin/init
-EXTLINUX
+          printf 'TIMEOUT 30\nDEFAULT uos-tv\n\nLABEL uos-tv\n  MENU LABEL UOS TV (S905X)\n  LINUX /Image\n  FDT /meson-gxl-s905x-p212-uos.dtb\n  APPEND console=ttyAML0,115200 root=/dev/mmcblk0p2 rw rootfstype=ext4 init=/sbin/init uos.console=ttyAML0\n\nLABEL uos-tv-fallback\n  MENU LABEL UOS TV (fallback)\n  LINUX /Image\n  FDT /meson-gxl-s905x-p212.dtb\n  APPEND console=ttyAML0,115200 root=/dev/mmcblk0p2 rw rootfstype=ext4 init=/sbin/init\n' \
+            > "$ROOTFS_DIR/boot/extlinux.conf"
 
           echo "Rootfs built: $(du -sh $ROOTFS_DIR | cut -f1)"
 
@@ -318,12 +299,8 @@ EXTLINUX
           dd if=/dev/zero of="$IMG" bs=1M count="$IMG_SIZE_MB" status=none
 
           # Partition: p1=FAT32 boot, p2=ext4 root
-          cat << EOF | sfdisk "$IMG"
-label: dos
-unit: sectors
-1 : start=2048, size=$((BOOT_SIZE * 2048)), type=c
-2 : start=$((BOOT_SIZE * 2048 + 2048)), type=83
-EOF
+          printf 'label: dos\nunit: sectors\n1 : start=2048, size=%d, type=c\n2 : start=%d, type=83\n' \
+            $((BOOT_SIZE * 2048)) $((BOOT_SIZE * 2048 + 2048)) | sfdisk "$IMG"
 
           # Format & mount
           LOOP=$(sudo losetup -fP --show "$IMG")
