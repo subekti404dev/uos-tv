@@ -713,7 +713,7 @@ No native C dependencies needed for 16/17 crates.
 </div>
 
 <!-- P2: MEDIUM -->
-<h3 style="color:var(--green)">P2 — Medium Priority ✅ 8/8 SELESAI</h3>
+<h3 style="color:var(--green)">P2 — Medium Priority ✅ 9/9 SELESAI</h3>
 
 <div class="roadmap-item">
   <div class="roadmap-priority" style="background:#22c55e">✅</div>
@@ -776,6 +776,14 @@ No native C dependencies needed for 16/17 crates.
   <div>
     <strong>inputd real evdev + IR remote</strong> <em>(2026-06-03: DONE)</em>
     <p>/dev/input/event* scanning via evdev crate. IR remote key mapping (NEC/RC-5/RC-6 codes). Key press/release dispatch. stardust event publishing: input.key, input.remote. Channel bridge (std mpsc → tokio). QEMU verified: inputd starts OK.</p>
+  </div>
+</div>
+
+<div class="roadmap-item">
+  <div class="roadmap-priority" style="background:#22c55e">✅</div>
+  <div>
+    <strong>S905X WiFi Driver Integration</strong> <em>(2026-06-04: DONE)</em>
+    <p>Out-of-tree kernel modules for RTL8189ES (B860H) dan RTL8189FS (HG680P). Build script: scripts/build-s905x-wifi.sh. Cross-compile with kernel headers. Firmware auto-download dari linux-firmware repo. Amlogic S905 SDIO platform support via OpenIPC/realtek-wlan. Board database: 5 supported STB models. Makefile target: make wifi-s905x.</p>
   </div>
 </div>
 

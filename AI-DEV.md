@@ -187,7 +187,7 @@ KERNEL=build/kernel/alpine-vmlinuz INITRD=build/kernel/alpine-initramfs TIMEOUT_
 | Display HDMI | ✅ Works with meson DRM/KMS | Full modesetting, atomic |
 | SD/eMMC | ✅ meson-gx-mmc | Boot from SD card |
 | Ethernet | ✅ stmmac | 100Mbps (some have GbE) |
-| WiFi | ⚠️ Varies per box | Usually RTL8723BS or Broadcom — needs firmware |
+| WiFi | ⚠️ Varies per box | See WiFi driver table below |
 | IR Remote | ✅ meson-ir | `/dev/input/event*` |
 | Audio HDMI | ✅ meson audio | ALSA via meson driver |
 
@@ -200,6 +200,29 @@ KERNEL=build/kernel/alpine-vmlinuz INITRD=build/kernel/alpine-initramfs TIMEOUT_
 **Critical difference from QEMU**: With Mali-450 GPU + lima + Mesa, **Cog/WPE WebKit can render the Luna UI natively on screen via HDMI**. This is the target deployment platform.
 
 **Board**: Generic `meson-gxl-s905x-p212` device tree. Most Android TV boxes use this reference design. DTB = `meson-gxl-s905x-p212.dtb`.
+
+**WiFi Drivers**: Out-of-tree kernel modules for some chips.
+
+| Box | WiFi Chip | Driver | Module | Repo |
+|-----|-----------|--------|--------|------|
+| B860H | RTL8189ES (SDIO) | Out-of-tree | `8189es.ko` | `openwetek/rtl8189es` |
+| HG680P | RTL8189FS (SDIO) | Out-of-tree | `8189fs.ko` | `OpenIPC/realtek-wlan` (Amlogic S905 platform) |
+| Nexbox-A95X | RTL8723BS (SDIO) | Mainline staging | `r8723bs.ko` | Kernel `drivers/staging/rtl8723bs` |
+| LibreTech-CC | RTL8723BS (SDIO) | Mainline staging | `r8723bs.ko` | Kernel `drivers/staging/rtl8723bs` |
+| Khadas-VIM | BCM43430 (SDIO) | Mainline | `brcmfmac.ko` | `CONFIG_BRCMFMAC=m` |
+
+**WiFi firmware**: Downloaded from `linux-firmware` repo:
+- `rtlwifi/rtl8188eufw.bin` — for RTL8189ES
+- `rtlwifi/rtl8188fufw.bin` — for RTL8189FS
+- `rtlwifi/rtl8723bs_nic.bin` — for RTL8723BS
+- `brcm/brcmfmac43430-sdio.bin` — for BCM43430
+
+**WiFi build**:
+```bash
+make wifi-s905x                    # Build kernel, then all WiFi drivers + firmware
+./scripts/build-s905x-wifi.sh --all  # Standalone driver build
+./scripts/build-s905x-wifi.sh --chip rtl8189es  # Single chip
+```
 
 **Boot flow on S905X**:
 ```

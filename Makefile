@@ -212,3 +212,14 @@ overlay-alpine: build ## Apply UOS overlay to Alpine rootfs
 build-cog: ## Cross-compile WPE WebKit Cog for aarch64
 	chmod +x scripts/build-cog.sh
 	./scripts/build-cog.sh $(BUILD_DIR)/cog
+
+# ── S905X WiFi Drivers ───────────────────────────────
+
+wifi-s905x: ## Build S905X WiFi drivers (RTL8189ES, RTL8189FS, RTL8723BS)
+	chmod +x scripts/build-s905x-wifi.sh scripts/bootstrap-s905x.sh
+	./scripts/bootstrap-s905x.sh --kernel-docker
+	./scripts/build-s905x-wifi.sh --all
+
+wifi-s905x-firmware: ## Download WiFi firmware only
+	chmod +x scripts/build-s905x-wifi.sh
+	./scripts/build-s905x-wifi.sh --firmware-only

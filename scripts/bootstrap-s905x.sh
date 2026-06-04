@@ -9,9 +9,11 @@
 # Output:   SD card image with u-boot, kernel, rootfs, GPU drivers, Cog/WPE
 #
 # Usage:
-#   ./scripts/bootstrap-s905x.sh [target_dir]       # Full build
+#   ./scripts/bootstrap-s905x.sh [target_dir]        # Full build
 #   ./scripts/bootstrap-s905x.sh --kernel-only       # Just build kernel
-#   ./scripts/bootstrap-s905x.sh --rootfs-only       # Just build rootfs
+#   ./scripts/bootstrap-s905x.sh --kernel-docker      # Docker kernel build
+#   ./scripts/bootstrap-s905x.sh --wifi               # Build WiFi drivers + fetch firmware
+#   ./scripts/bootstrap-s905x.sh --rootfs-only        # Just build rootfs
 #
 # Requirements:
 #   - ARM64 cross-compiler: aarch64-linux-gnu- (or use docker)
@@ -304,8 +306,27 @@ build_rootfs() {
     log "Setting up WiFi firmware..."
     mkdir -p "$ROOTFS_DIR/lib/firmware/rtlwifi"
     mkdir -p "$ROOTFS_DIR/lib/firmware/brcm"
-    # Firmware files must be added manually or downloaded:
-    # rtl8723bs_nic.bin, brcmfmac43430-sdio.bin, etc.
+
+    # Download firmware if build-s905x-wifi.sh was run
+    local FW_SRC="$TARGET_DIR/firmware"
+    if [ -d "$FW_SRC" ]; then
+        cp -r "$FW_SRC"/* "$ROOTFS_DIR/lib/firmware/" 2>/dev/null || true
+        log "  ✓ WiFi firmware copied from $FW_SRC"
+    fi
+
+    # Copy WiFi kernel modules if built
+    local WIFI_MOD_DIR="$TARGET_DIR/wifi-drivers"
+    if [ -d "$WIFI_MOD_DIR" ]; then
+        mkdir -p "$ROOTFS_DIR/lib/modules"
+        find "$WIFI_MOD_DIR" -name "*.ko" -exec cp {} "$ROOTFS_DIR/lib/modules/" \; 2>/dev/null || true
+        log "  ✓ WiFi kernel modules copied"
+    fi
+
+    # Also look for modules in kernel tree staging
+    if [ -d "$KERNEL_DIR/drivers/staging/rtl8723bs" ]; then
+        find "$KERNEL_DIR/drivers/staging/rtl8723bs" -name "*.ko" \
+            -exec cp {} "$ROOTFS_DIR/lib/modules/" \; 2>/dev/null || true
+    fi
 
     # ── Kernel modules ──
     if [ -f "$KERNEL_DIR/arch/arm64/boot/Image" ]; then
@@ -451,6 +472,14 @@ case "${1:-}" in
     --kernel-docker)
         build_kernel_docker
         ;;
+    --wifi)
+        log "Building WiFi drivers for S905X..."
+        "$SCRIPT_DIR/build-s905x-wifi.sh" --all \
+            --kernel "$KERNEL_DIR" --target "$TARGET_DIR"
+        log "Installing WiFi to rootfs..."
+        "$SCRIPT_DIR/build-s905x-wifi.sh" --install "$ROOTFS_DIR" \
+            --target "$TARGET_DIR"
+        ;;
     --rootfs-only)
         build_rootfs
         ;;
@@ -466,10 +495,15 @@ case "${1:-}" in
         log "Step 1: Build kernel"
         build_kernel_docker
         log ""
-        log "Step 2: Build rootfs"
+        log "Step 2: Build WiFi drivers + firmware"
+        "$SCRIPT_DIR/build-s905x-wifi.sh" --all \
+            --kernel "$KERNEL_DIR" --target "$TARGET_DIR" || \
+            warn "WiFi driver build failed (non-fatal)"
+        log ""
+        log "Step 3: Build rootfs"
         build_rootfs
         log ""
-        log "Step 3: Create SD image"
+        log "Step 4: Create SD image"
         create_sd_image
         log ""
         log "=== Build Complete ==="
@@ -482,6 +516,6 @@ case "${1:-}" in
         log "  4. Power on → UOS TV boots!"
         ;;
     *)
-        echo "Usage: $0 [--kernel-only|--kernel-docker|--rootfs-only|--uboot|--image|--all]"
+        echo "Usage: $0 [--kernel-only|--kernel-docker|--wifi|--rootfs-only|--uboot|--image|--all]"
         ;;
 esac
