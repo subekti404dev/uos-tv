@@ -15,6 +15,11 @@ on:
           - all
           - b860h
           - hg680p
+      nocache:
+        description: 'Skip caches (force rebuild)'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -23,15 +28,22 @@ on:
       - 'configs/services.d/wifid.yaml'
       - 'configs/dts/**'
       - 'Dockerfile.cross'
+      - '.github/workflows/s905x-build.yml'
 
 jobs:
-  # ── Phase 1: Rust cross-compile (reuse existing) ──
+  # ── Phase 1: Rust cross-compile ──
   rust-cross:
     name: Rust ARM64 Cross-Compile
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+          shared-key: s905x
+          cache-targets: true
 
       - name: Build cross-compile Docker image
         run: docker build -t uos-builder -f Dockerfile.cross .
@@ -44,7 +56,6 @@ jobs:
 
       - name: Upload ARM64 binaries
         uses: actions/upload-artifact@v4
-        id: upload
         with:
           name: rust-arm64-binaries
           path: |
@@ -81,6 +92,7 @@ jobs:
       ROOTFS_DIR: build/s905x/rootfs
       DTB: meson-gxl-s905x-p212
       KERNEL_VERSION: "6.6"
+      NOCACHE: ${{ inputs.nocache || 'false' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -102,7 +114,7 @@ jobs:
             libssl-dev libncurses-dev libelf-dev \
             device-tree-compiler u-boot-tools \
             parted dosfstools e2fsprogs mtools \
-            curl wget jq
+            curl wget jq pigz
 
       - name: Verify cross-compiler
         run: |
@@ -110,19 +122,61 @@ jobs:
           aarch64-linux-gnu-ld --version | head -1
           dtc --version | head -1
 
+      # ═══════════════════════════════════════════════
+      # CACHE: Kernel source + build artifacts
+      # ═══════════════════════════════════════════════
+      - name: Compute kernel cache key
+        id: kernel-cache-key
+        run: |
+          # Hash the kernel config commands + this workflow + kernel version
+          HASH=$(sha256sum "$PROJECT_DIR/.github/workflows/s905x-build.yml" | cut -c1-12)
+          echo "key=linux-s905x-v6.6-${HASH}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore kernel cache
+        if: env.NOCACHE != 'true'
+        id: kernel-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/s905x/kernel
+          key: ${{ steps.kernel-cache-key.outputs.key }}
+          restore-keys: |
+            linux-s905x-v6.6-
+
       - name: Clone Linux kernel (6.6)
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
           git clone --depth=1 --branch v6.6 \
-            https://github.com/torvalds/linux.git build/s905x/kernel
+            https://github.com/torvalds/linux.git "$KERNEL_DIR"
 
-      - name: Configure kernel
+      # ═══════════════════════════════════════════════
+      # CACHE: Alpine rootfs tarball
+      # ═══════════════════════════════════════════════
+      - name: Restore Alpine rootfs cache
+        if: env.NOCACHE != 'true'
+        id: alpine-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/alpine-rootfs.tar.gz
+          key: alpine-minirootfs-3.21-aarch64
+
+      - name: Download Alpine rootfs
+        if: steps.alpine-cache.outputs.cache-hit != 'true'
         run: |
-          cd build/s905x/kernel
+          curl -fSL \
+            "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.0-aarch64.tar.gz" \
+            -o /tmp/alpine-rootfs.tar.gz
+
+      # ═══════════════════════════════════════════════
+      # CONFIGURE + BUILD KERNEL (skip if cache hit)
+      # ═══════════════════════════════════════════════
+      - name: Configure kernel
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
+        run: |
+          cd "$KERNEL_DIR"
           make ARCH=arm64 defconfig
-          # Amlogic platform
           ./scripts/config -e ARCH_MESON
           ./scripts/config -d ARCH_MEDIATEK
-          # DRM/GPU
           ./scripts/config -e DRM
           ./scripts/config -e DRM_MESON
           ./scripts/config -e DRM_HDMI
@@ -131,16 +185,13 @@ jobs:
           ./scripts/config -e DRM_DW_HDMI
           ./scripts/config -e DRM_DW_HDMI_AHB_AUDIO
           ./scripts/config -e DRM_DISPLAY_CONNECTOR
-          # Storage
           ./scripts/config -e USB_XHCI_HCD
           ./scripts/config -e USB_DWC2
           ./scripts/config -e MMC
           ./scripts/config -e MMC_BLOCK
           ./scripts/config -e MMC_MESON_GX
-          # Network
           ./scripts/config -e STMMAC_ETH
           ./scripts/config -e MESON_GXL_PHY
-          # WiFi
           ./scripts/config -e CFG80211
           ./scripts/config -e MAC80211
           ./scripts/config -e WLAN
@@ -151,30 +202,26 @@ jobs:
           ./scripts/config -m RTL8723BS
           ./scripts/config -m BRCMFMAC
           ./scripts/config -m BRCMUTIL
-          # Crypto
           ./scripts/config -e CRYPTO_AES
           ./scripts/config -e CRYPTO_CCM
           ./scripts/config -e CRYPTO_GCM
           ./scripts/config -e CRYPTO_SHA256
           ./scripts/config -e CRYPTO_ARC4
           ./scripts/config -e CRYPTO_ECB
-          # Filesystem
           ./scripts/config -e EXT4_FS
           ./scripts/config -e EXT2_FS
           ./scripts/config -e VFAT_FS
           ./scripts/config -e TMPFS
-          # Devicetree
           ./scripts/config -e OF
           ./scripts/config -e OF_OVERLAY
-          # Performance
           ./scripts/config --set-val NR_CPUS 4
           ./scripts/config --set-val HZ 250
-          # Finalize
           make ARCH=arm64 olddefconfig
 
       - name: Build kernel (Image + modules)
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
-          cd build/s905x/kernel
+          cd "$KERNEL_DIR"
           NPROC=$(nproc)
           echo "Building with -j${NPROC}..."
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j${NPROC} Image 2>&1 | tail -30
@@ -182,20 +229,37 @@ jobs:
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             amlogic/meson-gxl-s905x-p212.dtb 2>&1 | tail -5
 
+      - name: Save kernel cache
+        if: env.NOCACHE != 'true' && steps.kernel-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/s905x/kernel
+          key: ${{ steps.kernel-cache-key.outputs.key }}
+
+      - name: Save Alpine rootfs cache
+        if: env.NOCACHE != 'true' && steps.alpine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/alpine-rootfs.tar.gz
+          key: alpine-minirootfs-3.21-aarch64
+
+      # ═══════════════════════════════════════════════
+      # POST-BUILD STEPS (always run)
+      # ═══════════════════════════════════════════════
       - name: Verify kernel artifacts
         run: |
           echo "=== Kernel Image ==="
-          ls -lh build/s905x/kernel/arch/arm64/boot/Image
-          file build/s905x/kernel/arch/arm64/boot/Image
+          ls -lh "$KERNEL_DIR/arch/arm64/boot/Image"
+          file "$KERNEL_DIR/arch/arm64/boot/Image"
           echo "=== DTB ==="
-          ls -lh build/s905x/kernel/arch/arm64/boot/dts/amlogic/meson-gxl-s905x-p212.dtb
+          ls -lh "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb"
 
       - name: Install kernel modules
         run: |
-          cd build/s905x/kernel
+          cd "$KERNEL_DIR"
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             INSTALL_MOD_PATH="$GITHUB_WORKSPACE/$ROOTFS_DIR" modules_install
-          # Get kernel version
           KVER=$(cat include/config/kernel.release)
           echo "KERNEL_VERSION_OUT=$KVER" >> "$GITHUB_ENV"
           echo "Kernel: $KVER"
@@ -203,74 +267,56 @@ jobs:
       - name: Apply DTS overlay (disable BT)
         continue-on-error: true
         run: |
-          # DTB overlay is optional — p212 DTB already has SDIO WiFi enabled.
-          # The overlay just disables Bluetooth (uart_A) which is no-op on STB boxes.
-          cd build/s905x/kernel/arch/arm64/boot/dts/amlogic
+          DTS_AML="$KERNEL_DIR/arch/arm64/boot/dts/amlogic"
+          cd "$DTS_AML"
           dtc -@ -I dts -O dtb -o uos-stb.dtbo \
-            "$GITHUB_WORKSPACE/configs/dts/b860h-hg680p-wifi.dtso" 2>/dev/null || true
-          if [ -f uos-stb.dtbo ] && fdtoverlay -i meson-gxl-s905x-p212.dtb \
-              -o meson-gxl-s905x-p212-uos.dtb uos-stb.dtbo 2>/dev/null; then
+            "$PROJECT_DIR/configs/dts/b860h-hg680p-wifi.dtso" 2>/dev/null || true
+          if [ -f uos-stb.dtbo ] && fdtoverlay -i "$DTB.dtb" \
+              -o "$DTB-uos.dtb" uos-stb.dtbo 2>/dev/null; then
             echo "Patched DTB created"
-            ls -lh meson-gxl-s905x-p212-uos.dtb
+            ls -lh "$DTB-uos.dtb"
           else
-            echo "Overlay skipped — using stock DTB (SDIO WiFi already enabled in p212)"
-            cp meson-gxl-s905x-p212.dtb meson-gxl-s905x-p212-uos.dtb
+            echo "Overlay skipped — using stock DTB"
+            cp "$DTB.dtb" "$DTB-uos.dtb"
           fi
 
       - name: Build WiFi drivers
         run: |
           if [ "$BOARD" = "all" ]; then
-            # Build both RTL8189ES and RTL8189FS
             "$PROJECT_DIR/scripts/build-s905x-wifi.sh" --all \
-              --kernel "$KERNEL_DIR" \
-              --target "$TARGET_DIR"
+              --kernel "$KERNEL_DIR" --target "$TARGET_DIR"
           elif [ "$BOARD" = "b860h" ]; then
             "$PROJECT_DIR/scripts/build-s905x-wifi.sh" --chip rtl8189es \
-              --kernel "$KERNEL_DIR" \
-              --target "$TARGET_DIR"
+              --kernel "$KERNEL_DIR" --target "$TARGET_DIR"
           else
             "$PROJECT_DIR/scripts/build-s905x-wifi.sh" --chip rtl8189fs \
-              --kernel "$KERNEL_DIR" \
-              --target "$TARGET_DIR"
+              --kernel "$KERNEL_DIR" --target "$TARGET_DIR"
           fi
 
       - name: Build rootfs (Alpine)
         run: |
           mkdir -p "$ROOTFS_DIR"
-
-          # Download Alpine minirootfs
-          ALPINE_VER="3.21"
-          ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VER}/releases/aarch64/alpine-minirootfs-${ALPINE_VER}.0-aarch64.tar.gz"
-          echo "Downloading Alpine rootfs..."
-          curl -fSL "$ALPINE_URL" -o /tmp/alpine-rootfs.tar.gz
           tar xzf /tmp/alpine-rootfs.tar.gz -C "$ROOTFS_DIR"
 
-          # Copy UOS binaries
           mkdir -p "$ROOTFS_DIR/usr/bin" "$ROOTFS_DIR/sbin"
           BIN_DIR="target/aarch64-unknown-linux-musl/release"
           for bin in inis monitord stardustd lunad lumind netmd wifid \
                    notifd otad pkgd logd dispald devmand powermand; do
-            if [ -f "$BIN_DIR/$bin" ]; then
-              cp "$BIN_DIR/$bin" "$ROOTFS_DIR/usr/bin/"
-            fi
+            [ -f "$BIN_DIR/$bin" ] && cp "$BIN_DIR/$bin" "$ROOTFS_DIR/usr/bin/"
           done
           cp "$BIN_DIR/inis" "$ROOTFS_DIR/sbin/init"
 
-          # Service manifests
           mkdir -p "$ROOTFS_DIR/usr/share/uos/services.d"
           cp configs/services.d/*.yaml "$ROOTFS_DIR/usr/share/uos/services.d/"
 
-          # Luna UI
           mkdir -p "$ROOTFS_DIR/var/www/luna"
           cp -r luna/* "$ROOTFS_DIR/var/www/luna/"
 
-          # WiFi firmware
           mkdir -p "$ROOTFS_DIR/lib/firmware/rtlwifi" "$ROOTFS_DIR/lib/firmware/brcm"
           if [ -d "$TARGET_DIR/firmware" ]; then
             cp -r "$TARGET_DIR/firmware"/* "$ROOTFS_DIR/lib/firmware/" 2>/dev/null || true
           fi
 
-          # WiFi modules to versioned path
           KVER=$(cat "$KERNEL_DIR/include/config/kernel.release")
           MOD_DEST="$ROOTFS_DIR/lib/modules/$KVER/extra"
           mkdir -p "$MOD_DEST"
@@ -278,20 +324,17 @@ jobs:
             find "$TARGET_DIR/wifi-drivers" -name "*.ko" -exec cp {} "$MOD_DEST/" \;
           fi
 
-          # Kernel modules (already installed via modules_install)
           depmod -b "$ROOTFS_DIR" "$KVER" 2>/dev/null || true
 
-          # wpa_supplicant config
           mkdir -p "$ROOTFS_DIR/etc/wpa_supplicant"
           printf 'ctrl_interface=/var/run/wpa_supplicant\nupdate_config=1\ncountry=ID\n' \
             > "$ROOTFS_DIR/etc/wpa_supplicant/wpa_supplicant.conf"
 
-          # extlinux.conf
           mkdir -p "$ROOTFS_DIR/boot"
           printf 'TIMEOUT 30\nDEFAULT uos-tv\n\nLABEL uos-tv\n  MENU LABEL UOS TV (S905X)\n  LINUX /Image\n  FDT /meson-gxl-s905x-p212-uos.dtb\n  APPEND console=ttyAML0,115200 root=/dev/mmcblk0p2 rw rootfstype=ext4 init=/sbin/init uos.console=ttyAML0\n\nLABEL uos-tv-fallback\n  MENU LABEL UOS TV (fallback)\n  LINUX /Image\n  FDT /meson-gxl-s905x-p212.dtb\n  APPEND console=ttyAML0,115200 root=/dev/mmcblk0p2 rw rootfstype=ext4 init=/sbin/init\n' \
             > "$ROOTFS_DIR/boot/extlinux.conf"
 
-          echo "Rootfs built: $(du -sh $ROOTFS_DIR | cut -f1)"
+          echo "Rootfs built: $(du -sh "$ROOTFS_DIR" | cut -f1)"
 
       - name: Create SD card image
         run: |
@@ -304,24 +347,18 @@ jobs:
           echo "Creating ${IMG_SIZE_MB}MB image..."
           dd if=/dev/zero of="$IMG" bs=1M count="$IMG_SIZE_MB" status=none
 
-          # Partition: p1=FAT32 boot, p2=ext4 root
           printf 'label: dos\nunit: sectors\n1 : start=2048, size=%d, type=c\n2 : start=%d, type=83\n' \
             $((BOOT_SIZE * 2048)) $((BOOT_SIZE * 2048 + 2048)) | sfdisk "$IMG"
 
-          # Format & mount
           LOOP=$(sudo losetup -fP --show "$IMG")
           sudo mkfs.vfat -F32 "${LOOP}p1"
           sudo mkfs.ext4 -F "${LOOP}p2"
 
           TMPMNT=$(mktemp -d)
           sudo mount "${LOOP}p1" "$TMPMNT"
-
-          # Copy boot files
           sudo cp "$KERNEL_DIR/arch/arm64/boot/Image" "$TMPMNT/"
           sudo cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb" "$TMPMNT/"
-          if [ -f "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB-uos.dtb" ]; then
-            sudo cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB-uos.dtb" "$TMPMNT/"
-          fi
+          sudo cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB-uos.dtb" "$TMPMNT/" 2>/dev/null || true
           sudo cp "$ROOTFS_DIR/boot/extlinux.conf" "$TMPMNT/" 2>/dev/null || true
           sudo umount "$TMPMNT"
 
