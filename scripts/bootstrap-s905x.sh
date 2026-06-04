@@ -25,7 +25,7 @@
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────
-TARGET_DIR="${1:-build/s905x}"
+TARGET_DIR="build/s905x"
 KERNEL_DIR="$TARGET_DIR/kernel"
 ROOTFS_DIR="$TARGET_DIR/rootfs"
 UBOOT_DIR="$TARGET_DIR/u-boot"
@@ -267,8 +267,9 @@ build_kernel() {
 
         log "Building kernel (this takes ~20-40 min)..."
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image 2>&1 | tail -20
-        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) dtbs 2>&1 | tail -5
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) modules 2>&1 | tail -5
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) \
+            arch/arm64/boot/dts/amlogic/meson-gxl-s905x-p212.dtb 2>&1 | tail -5
 
         cd "$OLDPWD"
     fi
@@ -618,14 +619,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /work
 DOCKERFILE
 
-    docker build -t uos-kernel-builder -f "$TARGET_DIR/Dockerfile.kernel" "$TARGET_DIR"
+    docker build -t uos-kernel-builder -f "$PROJECT_DIR/$TARGET_DIR/Dockerfile.kernel" "$PROJECT_DIR/$TARGET_DIR"
 
     if [ ! -d "$KERNEL_DIR/.git" ]; then
         git clone --depth=1 --branch "v$KERNEL_VERSION" \
             https://github.com/torvalds/linux.git "$KERNEL_DIR" 2>/dev/null
     fi
 
-    docker run --rm -v "$KERNEL_DIR:/work" uos-kernel-builder bash -c "
+    docker run --rm --ulimit nofile=65536:65536 \
+        -v "$PROJECT_DIR/$KERNEL_DIR:/work" uos-kernel-builder bash -c "
         make ARCH=arm64 defconfig
         ./scripts/config -e ARCH_MESON
         ./scripts/config -e DRM_MESON
@@ -644,8 +646,11 @@ DOCKERFILE
         ./scripts/config -m BRCMFMAC
         ./scripts/config -m BRCMUTIL
         make ARCH=arm64 olddefconfig
-        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j\$(nproc) Image dtbs modules
-    " 2>&1 | tail -20
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j\$(nproc) Image 2>&1 | tail -5
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j\$(nproc) modules 2>&1 | tail -5
+        # Build DTB manually (avoids building all 3000+ platform DTBs)
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- amlogic/meson-gxl-s905x-p212.dtb
+    " 2>&1 | tail -15
 }
 
 # ── Main ──────────────────────────────────────────────

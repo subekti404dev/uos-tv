@@ -2,8 +2,8 @@
 //!
 //! Manages startup, monitoring, restart, and shutdown of all services.
 
-use crate::graph::DependencyGraph;
-use crate::manifest::{RestartPolicy, ServiceManifest};
+use monitord::graph::DependencyGraph;
+use monitord::manifest::{RestartPolicy, ServiceManifest};
 use dashmap::DashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
