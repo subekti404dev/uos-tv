@@ -167,9 +167,8 @@ jobs:
           ./scripts/config -e OF
           ./scripts/config -e OF_OVERLAY
           # Performance
-          ./scripts/config -e NR_CPUS -v 4
-          ./scripts/config -e PREEMPT
-          ./scripts/config -e HZ -v 250
+          ./scripts/config --set-val NR_CPUS 4
+          ./scripts/config --set-val HZ 250
           # Finalize
           make ARCH=arm64 olddefconfig
 
