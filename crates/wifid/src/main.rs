@@ -84,8 +84,7 @@ fn detect_sdio_wifi() -> Option<(&'static str, &'static str)> {
                 // Realtek SDIO WiFi — covers RTL8189ES, RTL8189FS, RTL8723BS
                 ("0x024c", _) => {
                     // Check which Realtek variant via modalias
-                    let modalias = fs::read_to_string(path.join("modalias"))
-                        .unwrap_or_default();
+                    let modalias = fs::read_to_string(path.join("modalias")).unwrap_or_default();
                     if modalias.contains("rtl8723") {
                         return Some(("RTL8723BS", "r8723bs.ko"));
                     }
