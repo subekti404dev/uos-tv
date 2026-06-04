@@ -216,6 +216,8 @@ jobs:
           ./scripts/config -e OF_OVERLAY
           ./scripts/config --set-val NR_CPUS 4
           ./scripts/config --set-val HZ 250
+          # Disable -Werror so out-of-tree WiFi drivers compile
+          ./scripts/config -d WERROR
           make ARCH=arm64 olddefconfig
 
       - name: Build kernel (Image + modules)
