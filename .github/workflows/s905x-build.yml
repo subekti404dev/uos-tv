@@ -313,6 +313,52 @@ jobs:
           ls -lh build/u-boot/u-boot.bin
           file build/u-boot/u-boot.bin
 
+      # ═══════════════════════════════════════════════
+      # FIP: Amlogic Firmware Image Package
+      #   Combines BL2 + BL31 + u-boot (BL33) into signed
+      #   boot image that Amlogic BootROM can chainload.
+      #   Uses LibreELEC beelink-gt1 blobs (same GXL SoC).
+      # ═══════════════════════════════════════════════
+      - name: Compute FIP cache key
+        id: fip-cache-key
+        run: |
+          echo "key=fip-gxl-beelink-gt1-v3" >> "$GITHUB_OUTPUT"
+
+      - name: Restore FIP cache
+        if: env.NOCACHE != 'true'
+        id: fip-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/s905x/fip
+          key: ${{ steps.fip-cache-key.outputs.key }}
+
+      - name: Clone LibreELEC amlogic-boot-fip
+        if: steps.fip-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth=1 \
+            https://github.com/LibreELEC/amlogic-boot-fip.git \
+            build/fip-repo
+
+      - name: Build FIP (beelink-gt1 + u-boot)
+        if: steps.fip-cache.outputs.cache-hit != 'true'
+        run: |
+          cd build/fip-repo
+          # Build signed FIP image using beelink-gt1 GXL blobs + our u-boot
+          # Output: build/s905x/fip/u-boot.bin (combined BL2+BL31+BL33)
+          mkdir -p ../s905x/fip
+          ./build-fip.sh beelink-gt1 ../u-boot/u-boot.bin ../s905x/fip 2>&1 | tail -10
+          echo "=== FIP artifacts ==="
+          ls -lh ../s905x/fip/
+
+      - name: Save FIP cache
+        if: env.NOCACHE != 'true' && steps.fip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/s905x/fip
+          key: ${{ steps.fip-cache-key.outputs.key }}
+
       - name: Apply DTS overlay (disable BT)
         continue-on-error: true
         run: |
@@ -344,6 +390,23 @@ jobs:
           fi
           echo "NOTE: WiFi modules may need rebuild on target device."
 
+      - name: Download WiFi firmware
+        run: |
+          FW_DIR="$TARGET_DIR/firmware"
+          mkdir -p "$FW_DIR/rtlwifi" "$FW_DIR/brcm"
+          echo "Downloading WiFi firmware from linux-firmware..."
+          # RTL8189ES (RTL8188EU family)
+          curl -sfL "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/rtlwifi/rtl8188eufw.bin" \
+            -o "$FW_DIR/rtlwifi/rtl8188eufw.bin" && echo "  ✓ rtl8188eufw.bin" || echo "  ! rtl8188eufw.bin skipped"
+          # RTL8189FS (RTL8188F family)
+          curl -sfL "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/rtlwifi/rtl8188fufw.bin" \
+            -o "$FW_DIR/rtlwifi/rtl8188fufw.bin" && echo "  ✓ rtl8188fufw.bin" || echo "  ! rtl8188fufw.bin skipped"
+          # RTL8723BS
+          curl -sfL "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/rtlwifi/rtl8723bs_nic.bin" \
+            -o "$FW_DIR/rtlwifi/rtl8723bs_nic.bin" && echo "  ✓ rtl8723bs_nic.bin" || echo "  ! rtl8723bs_nic.bin skipped"
+          echo "Firmware tree:"
+          find "$FW_DIR" -type f | sort | while read f; do echo "    $(echo "$f" | sed "s|$FW_DIR/||")"; done
+
       - name: Build rootfs (Alpine)
         run: |
           mkdir -p "$ROOTFS_DIR"
@@ -368,8 +431,16 @@ jobs:
           cp -r luna/* "$ROOTFS_DIR/var/www/luna/"
 
           mkdir -p "$ROOTFS_DIR/lib/firmware/rtlwifi" "$ROOTFS_DIR/lib/firmware/brcm"
-          if [ -d "$TARGET_DIR/firmware" ]; then
-            cp -r "$TARGET_DIR/firmware"/* "$ROOTFS_DIR/lib/firmware/" 2>/dev/null || true
+          FW_SRC="$TARGET_DIR/firmware"
+          if [ -d "$FW_SRC" ]; then
+            echo "Installing firmware from $FW_SRC ..."
+            cp -v "$FW_SRC/rtlwifi/"*.bin "$ROOTFS_DIR/lib/firmware/rtlwifi/" 2>/dev/null || true
+            echo "Firmware in rootfs:"
+            find "$ROOTFS_DIR/lib/firmware" -type f | sort | while read f; do
+              echo "    $(echo "$f" | sed "s|$ROOTFS_DIR||")"
+            done
+          else
+            echo "NOTE: No firmware directory — WiFi may not work"
           fi
 
           KVER=$(cat "$KERNEL_DIR/include/config/kernel.release")
@@ -408,19 +479,17 @@ jobs:
           printf 'label: dos\nunit: sectors\n1 : start=4096, size=%d, type=c\n2 : start=%d, type=83\n' \
             $((BOOT_SIZE * 2048)) $((BOOT_SIZE * 2048 + 4096)) | sfdisk "$IMG"
 
-          # Write u-boot at Amlogic GXL SD card offset
-          # BootROM loads from sector 1 (512 bytes offset)
-          # BL33 (u-boot proper) goes at sector 96 (offset 49152)
-          if [ -f build/u-boot/u-boot.bin ]; then
-            echo "Writing u-boot to SD image at Amlogic offset..."
-            dd if=build/u-boot/u-boot.bin of="$IMG" bs=512 seek=96 conv=notrunc status=none
-            # u-boot-dtb.bin (with embedded device tree) if available
-            if [ -f build/u-boot/u-boot-dtb.bin ]; then
-              dd if=build/u-boot/u-boot-dtb.bin of="$IMG" bs=512 seek=96 conv=notrunc status=none
-            fi
-            echo "u-boot written at sectors 96+"
+          # Write Amlogic FIP at sector 1 (offset 512)
+          # FIP contains: boot header + BL2 + BL31 + u-boot (BL33)
+          # BootROM scans sector 1+ for Amlogic signed boot signature
+          if [ -f build/s905x/fip/u-boot.bin ]; then
+            echo "Writing Amlogic FIP to SD image at sector 1..."
+            dd if=build/s905x/fip/u-boot.bin of="$IMG" bs=512 seek=1 conv=notrunc status=none
+            FIP_SIZE=$(stat -c%s build/s905x/fip/u-boot.bin)
+            echo "FIP written: ${FIP_SIZE} bytes at sectors 1+"
           else
-            echo "WARNING: No u-boot.bin — image will NOT boot on hardware"
+            echo "WARNING: No FIP image — image will NOT boot on Amlogic hardware"
+            echo "  BootROM requires signed BL2+BL31+u-boot FIP at sector 1"
           fi
 
           LOOP=$(sudo losetup -fP --show "$IMG")
