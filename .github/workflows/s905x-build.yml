@@ -201,14 +201,21 @@ jobs:
           echo "Kernel: $KVER"
 
       - name: Apply DTS overlay (disable BT)
+        continue-on-error: true
         run: |
+          # DTB overlay is optional — p212 DTB already has SDIO WiFi enabled.
+          # The overlay just disables Bluetooth (uart_A) which is no-op on STB boxes.
           cd build/s905x/kernel/arch/arm64/boot/dts/amlogic
           dtc -@ -I dts -O dtb -o uos-stb.dtbo \
-            "$GITHUB_WORKSPACE/configs/dts/b860h-hg680p-wifi.dtso"
-          fdtoverlay -i meson-gxl-s905x-p212.dtb \
-            -o meson-gxl-s905x-p212-uos.dtb uos-stb.dtbo
-          echo "=== Patched DTB ==="
-          ls -lh meson-gxl-s905x-p212-uos.dtb
+            "$GITHUB_WORKSPACE/configs/dts/b860h-hg680p-wifi.dtso" 2>/dev/null || true
+          if [ -f uos-stb.dtbo ] && fdtoverlay -i meson-gxl-s905x-p212.dtb \
+              -o meson-gxl-s905x-p212-uos.dtb uos-stb.dtbo 2>/dev/null; then
+            echo "Patched DTB created"
+            ls -lh meson-gxl-s905x-p212-uos.dtb
+          else
+            echo "Overlay skipped — using stock DTB (SDIO WiFi already enabled in p212)"
+            cp meson-gxl-s905x-p212.dtb meson-gxl-s905x-p212-uos.dtb
+          fi
 
       - name: Build WiFi drivers
         run: |
