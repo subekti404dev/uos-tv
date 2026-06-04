@@ -83,7 +83,7 @@ jobs:
     name: S905X SD Card Image
     runs-on: ubuntu-latest
     needs: rust-cross
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       BOARD: ${{ inputs.board || 'all' }}
       PROJECT_DIR: ${{ github.workspace }}
@@ -267,6 +267,52 @@ jobs:
           echo "KERNEL_VERSION_OUT=$KVER" >> "$GITHUB_ENV"
           echo "Kernel: $KVER"
 
+      # ═══════════════════════════════════════════════
+      # U-BOOT: Amlogic S905X boot loader
+      # ═══════════════════════════════════════════════
+      - name: Compute u-boot cache key
+        id: uboot-cache-key
+        run: |
+          echo "key=uboot-p212-v2024.01" >> "$GITHUB_OUTPUT"
+
+      - name: Restore u-boot cache
+        if: env.NOCACHE != 'true'
+        id: uboot-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/u-boot
+          key: ${{ steps.uboot-cache-key.outputs.key }}
+
+      - name: Clone u-boot
+        if: steps.uboot-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth=1 --branch v2024.01 \
+            https://github.com/u-boot/u-boot.git build/u-boot
+
+      - name: Build u-boot (p212)
+        if: steps.uboot-cache.outputs.cache-hit != 'true'
+        run: |
+          cd build/u-boot
+          make p212_defconfig
+          make CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) 2>&1 | tail -10
+          echo "=== u-boot artifacts ==="
+          ls -lh u-boot.bin u-boot-dtb.bin u-boot.bin.sd.bin 2>/dev/null || true
+
+      - name: Save u-boot cache
+        if: env.NOCACHE != 'true' && steps.uboot-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/u-boot
+          key: ${{ steps.uboot-cache-key.outputs.key }}
+
+      - name: Verify u-boot
+        run: |
+          echo "=== u-boot binary ==="
+          ls -lh build/u-boot/u-boot.bin
+          file build/u-boot/u-boot.bin
+
       - name: Apply DTS overlay (disable BT)
         continue-on-error: true
         run: |
@@ -356,8 +402,26 @@ jobs:
           echo "Creating ${IMG_SIZE_MB}MB image..."
           dd if=/dev/zero of="$IMG" bs=1M count="$IMG_SIZE_MB" status=none
 
-          printf 'label: dos\nunit: sectors\n1 : start=2048, size=%d, type=c\n2 : start=%d, type=83\n' \
-            $((BOOT_SIZE * 2048)) $((BOOT_SIZE * 2048 + 2048)) | sfdisk "$IMG"
+          # Partition: p1 starts at sector 4096 to leave room for u-boot
+          # Amlogic GXL: BootROM loads BL2 from sectors 1-63, BL3x from 64-95
+          # u-boot (BL33) goes at sector 96, first partition at 4096
+          printf 'label: dos\nunit: sectors\n1 : start=4096, size=%d, type=c\n2 : start=%d, type=83\n' \
+            $((BOOT_SIZE * 2048)) $((BOOT_SIZE * 2048 + 4096)) | sfdisk "$IMG"
+
+          # Write u-boot at Amlogic GXL SD card offset
+          # BootROM loads from sector 1 (512 bytes offset)
+          # BL33 (u-boot proper) goes at sector 96 (offset 49152)
+          if [ -f build/u-boot/u-boot.bin ]; then
+            echo "Writing u-boot to SD image at Amlogic offset..."
+            dd if=build/u-boot/u-boot.bin of="$IMG" bs=512 seek=96 conv=notrunc status=none
+            # u-boot-dtb.bin (with embedded device tree) if available
+            if [ -f build/u-boot/u-boot-dtb.bin ]; then
+              dd if=build/u-boot/u-boot-dtb.bin of="$IMG" bs=512 seek=96 conv=notrunc status=none
+            fi
+            echo "u-boot written at sectors 96+"
+          else
+            echo "WARNING: No u-boot.bin — image will NOT boot on hardware"
+          fi
 
           LOOP=$(sudo losetup -fP --show "$IMG")
           sudo mkfs.vfat -F32 "${LOOP}p1"
