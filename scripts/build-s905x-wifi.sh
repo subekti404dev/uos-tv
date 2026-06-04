@@ -51,6 +51,10 @@ warn() { echo -e "${YELLOW}  !${NC} $*"; }
 
 # ── Check prerequisites ─────────────────────────
 check_prereqs() {
+    # Resolve relative paths to absolute (script may cd later)
+    KERNEL_DIR="$(cd "$KERNEL_DIR" 2>/dev/null && pwd || echo "$KERNEL_DIR")"
+    TARGET_DIR="$(cd "$TARGET_DIR" 2>/dev/null && pwd || echo "$TARGET_DIR")"
+
     if [ ! -d "$KERNEL_DIR" ]; then
         warn "Kernel directory not found: $KERNEL_DIR"
         warn "Build kernel first: ./scripts/bootstrap-s905x.sh --kernel-docker"
