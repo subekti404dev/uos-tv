@@ -2537,6 +2537,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wifid"
+version = "0.1.0"
+
+[[package]]
 name = "windows-core"
 version = "0.62.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

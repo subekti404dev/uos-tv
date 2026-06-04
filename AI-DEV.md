@@ -46,6 +46,7 @@ Alpine Linux kernel → Alpine Init → inis (PID 1) → monitord → 14 service
 | `lunad` | `lunad` | **HTTP static file server** — serves Luna UI from `/var/www/luna` on port 80 |
 | `lumind` | `lumind` | **Display manager** — scans DRM/input devices, launches Cog (WPE WebKit) |
 | `netmd` | `netmd` | **Network daemon** — WiFi scanning (wpa_cli), Ethernet, connectivity status |
+| `wifid` | `wifid` | **WiFi module loader** — one-shot, detects SDIO WiFi chip, loads kernel module, exits |
 | `audiod` | `audiod` | **Audio daemon** — ALSA mixer control, volume (0-100%), mute, card enumeration |
 | `inputd` | `inputd` | **Input daemon** — evdev (/dev/input/event*), IR remote key mapping, key events via stardust |
 | `notifd` | `notifd` | **Notification daemon** — stores/forwards notifications, Luna UI subscription |
@@ -246,8 +247,15 @@ Khadas-VIM | meson-gxl-s905x-khadas-vim.dtb   | S905X       | ✅ Board-specific
 - `brcm/brcmfmac43430-sdio.bin` — for BCM43430
 
 **WiFi build**:
+**WiFi boot chain on S905X**:
+1. Linux boots → MMC subsystem loads → SDIO bus scanned
+2. `wifid` service starts → detects Realtek chip on SDIO → `insmod 8189es.ko`
+3. Module loads firmware from `/lib/firmware/rtlwifi/`
+4. `wlan0` interface appears
+5. `netmd` starts → detects wlan0 → ready for WiFi scan/connect
+
 ```bash
-make wifi-s905x                    # Build kernel, then all WiFi drivers + firmware
+make wifi-s905x                    # Build kernel + all WiFi drivers + firmware
 ./scripts/build-s905x-wifi.sh --all  # Standalone driver build
 ./scripts/build-s905x-wifi.sh --chip rtl8189es  # Single chip
 ```

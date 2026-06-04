@@ -19,6 +19,7 @@ members = [
   "crates/casync-rs",
   "crates/update-verify",
   "crates/lunad",
+  "crates/wifid",
 ]
 
 [workspace.package]

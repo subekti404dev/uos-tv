@@ -1,0 +1,5 @@
+[package]
+name = "wifid"
+version = "0.1.0"
+edition = "2021"
+description = "UOS TV WiFi module loader — probe SDIO WiFi and load kernel modules"

@@ -220,12 +220,32 @@ build_kernel() {
         ./scripts/config -e STMMAC_ETH            # Amlogic Ethernet
         ./scripts/config -e MESON_GXL_PHY
 
-        # WiFi (compile as modules — load firmware at runtime)
-        ./scripts/config -m RTL8723BS              # Common in S905X boxes
-        ./scripts/config -m RTL8188EU
-        ./scripts/config -m BRCMFMAC               # Broadcom WiFi
-        ./scripts/config -e CFG80211
-        ./scripts/config -e MAC80211
+        # ── WiFi framework ──
+        ./scripts/config -e CFG80211               # cfg80211 wireless config API
+        ./scripts/config -e MAC80211               # mac80211 MLME
+        ./scripts/config -e WLAN                   # Wireless LAN
+        ./scripts/config -e WEXT_CORE              # Wireless extensions
+        ./scripts/config -e WEXT_PROC              # /proc/net/wireless
+        ./scripts/config -e RFKILL                 # RF kill switch support
+        ./scripts/config -e MMC_SDIO               # SDIO bus (needed for SDIO WiFi!)
+
+        # ── WiFi crypto (WPA/WPA2) ──
+        ./scripts/config -e CRYPTO_AES
+        ./scripts/config -e CRYPTO_CCM
+        ./scripts/config -e CRYPTO_GCM
+        ./scripts/config -e CRYPTO_SHA256
+        ./scripts/config -e CRYPTO_ARC4
+        ./scripts/config -e CRYPTO_ECB
+
+        # ── Mainline WiFi drivers (compile as modules) ──
+        ./scripts/config -m RTL8723BS              # RTL8723BS SDIO (Nexbox, LibreTech)
+        ./scripts/config -m RTL8XXXU               # RTL8188EU/RTL8192EU USB
+        ./scripts/config -m BRCMFMAC               # Broadcom SDIO (Khadas VIM)
+        ./scripts/config -m BRCMUTIL               # Broadcom utility
+
+        # ── Out-of-tree hints (built separately) ──
+        # RTL8189ES → openwetek/rtl8189es (CONFIG_RTL8188E=y, SDIO)
+        # RTL8189FS → OpenIPC/realtek-wlan (CONFIG_RTL8188F=y, SDIO, platform_aml_s905)
 
         # Filesystem support
         ./scripts/config -e EXT4_FS
@@ -257,6 +277,29 @@ build_kernel() {
     ls -lh "$KERNEL_DIR/arch/arm64/boot/Image"
     ls -lh "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb" 2>/dev/null || \
         warn "DTB not found at expected path: arch/arm64/boot/dts/amlogic/$DTB.dtb"
+
+    # ── Apply DTS overlay for STB boxes ──
+    if [[ "$DTB" == *"p212"* ]]; then
+        log "Applying DTS overlay: disable BT, enable Realtek WiFi..."
+        DTSO_SRC="$PROJECT_DIR/configs/dts/b860h-hg680p-wifi.dtso"
+        DTSO_OUT="$KERNEL_DIR/arch/arm64/boot/dts/amlogic/uos-stb.dtbo"
+        DTB_IN="$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb"
+        DTB_OUT="$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB-uos.dtb"
+
+        if command -v dtc &>/dev/null; then
+            dtc -@ -I dts -O dtb -o "$DTSO_OUT" "$DTSO_SRC" 2>/dev/null && {
+                if command -v fdtoverlay &>/dev/null; then
+                    fdtoverlay -i "$DTB_IN" -o "$DTB_OUT" "$DTSO_OUT" && \
+                        log "  ✓ Overlay applied → $DTB-uos.dtb"
+                else
+                    log "  ✓ Overlay compiled (fdtoverlay not found — use $DTSO_OUT separately)"
+                fi
+            } || warn "  ! dtc overlay compile failed"
+        else
+            warn "  ! dtc not found — skipping overlay (BT node stays enabled)"
+            warn "    Install: apt install device-tree-compiler"
+        fi
+    fi
 }
 
 # ── Build u-boot ─────────────────────────────────────
@@ -319,7 +362,7 @@ build_rootfs() {
     if [ -d "$UOS_BINARIES_DIR" ]; then
         mkdir -p "$ROOTFS_DIR/usr/bin"
         for bin in inis monitord stardustd lunad lumind netmd audiod inputd \
-                   notifd otad pkgd logd dispald devmand powermand; do
+                   notifd otad pkgd logd dispald devmand powermand wifid; do
             if [ -f "$UOS_BINARIES_DIR/$bin" ]; then
                 cp "$UOS_BINARIES_DIR/$bin" "$ROOTFS_DIR/usr/bin/"
             fi
@@ -408,8 +451,14 @@ DEFAULT uos-tv
 LABEL uos-tv
   MENU LABEL UOS TV (S905X)
   LINUX /Image
-  FDT /meson-gxl-s905x-p212.dtb
+  FDT /meson-gxl-s905x-p212-uos.dtb
   APPEND console=ttyAML0,115200 root=/dev/mmcblk0p2 rw rootfstype=ext4 init=/sbin/init uos.console=ttyAML0
+
+LABEL uos-tv-fallback
+  MENU LABEL UOS TV (fallback — stock p212 DTB)
+  LINUX /Image
+  FDT /meson-gxl-s905x-p212.dtb
+  APPEND console=ttyAML0,115200 root=/dev/mmcblk0p2 rw rootfstype=ext4 init=/sbin/init
 EXTLINUX
 
     # ── Init config ──
@@ -463,6 +512,9 @@ EOF
         if [ -f "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb" ]; then
             cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb" "$TMPMNT/"
         fi
+        if [ -f "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB-uos.dtb" ]; then
+            cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB-uos.dtb" "$TMPMNT/"
+        fi
         cp "$ROOTFS_DIR/boot/extlinux.conf" "$TMPMNT/" 2>/dev/null || true
         umount "$TMPMNT"
 
@@ -511,9 +563,16 @@ DOCKERFILE
         ./scripts/config -e MMC_MESON_GX
         ./scripts/config -e STMMAC_ETH
         ./scripts/config -e EXT4_FS
+        ./scripts/config -e CFG80211
+        ./scripts/config -e MAC80211
+        ./scripts/config -e WLAN
+        ./scripts/config -e WEXT_CORE
+        ./scripts/config -e WEXT_PROC
+        ./scripts/config -e RFKILL
+        ./scripts/config -e MMC_SDIO
         ./scripts/config -m RTL8723BS
         ./scripts/config -m BRCMFMAC
-        ./scripts/config -e CFG80211
+        ./scripts/config -m BRCMUTIL
         make ARCH=arm64 olddefconfig
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j\$(nproc) Image dtbs modules
     " 2>&1 | tail -20

@@ -1,0 +1,15 @@
+# ── wifid — WiFi Module Loader ─────────────────
+# One-shot service: detects SDIO WiFi chip, loads kernel module,
+# waits for wlan0 interface, publishes ready event, then exits.
+#
+# Dependencies: none (runs early, before netmd)
+# After this service completes, netmd can detect wlan0
+
+name: wifid
+description: "WiFi kernel module loader (one-shot)"
+binary: /usr/bin/wifid
+args: []
+dependencies: []
+restart: never
+critical: false
+startup_timeout_ms: 15000

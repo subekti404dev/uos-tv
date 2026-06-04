@@ -1,0 +1,100 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * UOS TV — DTS Overlay for B860H / HG680P (Amlogic S905X STB boxes)
+ *
+ * Base DTB: meson-gxl-s905x-p212.dtb
+ *
+ * This overlay adapts the generic p212 device tree for ZTE B860H and HG680P:
+ *
+ *   1. DISABLE Bluetooth (uart_A) — p212 has BCM43438 BT, STB boxes don't.
+ *   2. SDIO WiFi on sd_emmc_a — already present in p212.dtsi, KEPT AS-IS.
+ *      - bus-width: 4-bit
+ *      - max-frequency: 50 MHz
+ *      - non-removable
+ *      - pwrseq reset: GPIOX_6 (p212 default — verify on actual hardware)
+ *      - 32KHz clock from PWM_E
+ *      - Realtek RTL8189ES/FS auto-detects via SDIO vendor/device ID (0x024c)
+ *   3. IR receiver on meson-ir — already present, KEPT AS-IS.
+ *
+ * GPU: Mali-450 via lima — in meson-gxl-mali.dtsi, unchanged.
+ *
+ * TO VERIFY ON HARDWARE:
+ *   - WiFi reset GPIO: p212 uses GPIOX_6. If B860H/HG680P use a different
+ *     pin (e.g., GPIOX_7), uncomment fragment@2 below and adjust.
+ *   - SD card detect: p212 uses CARD_6. Usually correct on STB boxes.
+ *   - Power LED: add gpio-leds fragment if GPIO is known.
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "amlogic,p212", "amlogic,s905x", "amlogic,meson-gxl";
+
+    /*
+     * Fragment 0: Disable Bluetooth on uart_A.
+     *
+     * The p212 development board has a Broadcom BCM43438 Bluetooth module
+     * connected to uart_A. B860H and HG680P are WiFi-only boxes with
+     * Realtek chips — no Bluetooth hardware. Disabling this node prevents
+     * the kernel from trying to initialize a non-existent BT chip.
+     */
+    fragment@0 {
+        target-path = "/soc/bus@c8100000/serial@c11004c0";
+
+        __overlay__ {
+            status = "disabled";
+        };
+    };
+
+    /*
+     * Fragment 1: Ensure SDIO WiFi is enabled (already on in p212.dtsi).
+     *
+     * This fragment is redundant — sd_emmc_a is already enabled with
+     * correct settings in the base DTB. It's included here as documentation
+     * and as a template for GPIO adjustments.
+     *
+     * The Realtek WiFi driver does not need a 'compatible' string in the
+     * device tree — it binds via SDIO function driver matching
+     * (vendor 0x024c, device-specific IDs).
+     */
+    fragment@1 {
+        target-path = "/soc/bus@c8834000/mmc@d0070000";
+
+        __overlay__ {
+            status = "okay";
+            bus-width = <4>;
+            max-frequency = <50000000>;
+            non-removable;
+            disable-wp;
+            keep-power-in-suspend;
+        };
+    };
+
+    /*
+     * Fragment 2: WiFi reset GPIO override (commented out — enable if needed).
+     *
+     * If your B860H or HG680P uses a different GPIO for WiFi reset than
+     * GPIOX_6 (the p212 default), uncomment and adjust this fragment.
+     *
+     * Common alternatives observed on STB boxes:
+     *   - GPIOX_6 (p212 default)
+     *   - GPIOX_7
+     *   - GPIOX_8
+     *   - GPIOCLK_1
+     *
+     * To find the correct GPIO on your box:
+     *   1. Boot the original Android firmware
+     *   2. Via ADB: cat /sys/kernel/debug/gpio | grep -i wlan
+     *   Or check the original DTB: dtc -I dtb -O dts /dev/block/mmcblk0pX
+     */
+    /*
+    fragment@2 {
+        target-path = "/soc/sdio-pwrseq";
+
+        __overlay__ {
+            reset-gpios = <&gpio GPIOX_7 GPIO_ACTIVE_LOW>;
+        };
+    };
+    */
+};
