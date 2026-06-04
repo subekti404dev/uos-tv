@@ -320,20 +320,33 @@ install_to_rootfs() {
     local ROOTFS="${1:-$TARGET_DIR/rootfs}"
     log "Installing WiFi drivers + firmware to rootfs: $ROOTFS"
 
-    # Kernel modules
-    mkdir -p "$ROOTFS/lib/modules"
-    local MOD_DIR="$ROOTFS/lib/modules"
+    # Determine kernel version for proper module path
+    local KVER=""
+    if [ -f "$KERNEL_DIR/include/generated/utsrelease.h" ]; then
+        KVER=$(grep UTS_RELEASE "$KERNEL_DIR/include/generated/utsrelease.h" | \
+            sed 's/.*"\(.*\)".*/\1/')
+    else
+        KVER="unknown"
+    fi
+    local MOD_DEST="$ROOTFS/lib/modules/$KVER/extra"
+    mkdir -p "$MOD_DEST"
 
-    # Copy .ko files
+    log "Installing modules to: $MOD_DEST"
+
+    # Copy .ko files to versioned extra/
     for drv_dir in "$WIFI_DIR"/*/; do
-        find "$drv_dir" -name "*.ko" -exec cp -v {} "$MOD_DIR/" \; 2>/dev/null || true
+        find "$drv_dir" -name "*.ko" -exec cp -v {} "$MOD_DEST/" \; 2>/dev/null || true
     done
 
-    # Also check kernel tree for modules
+    # Also check kernel tree for staging modules
     if [ -d "$KERNEL_DIR" ]; then
         find "$KERNEL_DIR" -path "*/staging/rtl8723bs/r8723bs.ko" \
-            -exec cp -v {} "$MOD_DIR/" \; 2>/dev/null || true
+            -exec cp -v {} "$MOD_DEST/" \; 2>/dev/null || true
+        find "$KERNEL_DIR/drivers/net/wireless" -name "*.ko" \
+            -exec cp -v {} "$MOD_DEST/" \; 2>/dev/null || true
     fi
+
+    # Note: depmod must be run after this — handled by bootstrap-s905x.sh
 
     # Firmware
     if [ -d "$FIRMWARE_DIR" ]; then
@@ -341,10 +354,10 @@ install_to_rootfs() {
         cp -r "$FIRMWARE_DIR"/* "$ROOTFS/lib/firmware/" 2>/dev/null || true
     fi
 
-    log "WiFi files installed to rootfs"
+    log "WiFi files installed to rootfs (kernel=$KVER)"
     echo ""
-    echo "  Modules:"
-    ls -lh "$MOD_DIR"/*.ko 2>/dev/null || echo "    (none)"
+    echo "  Modules ($MOD_DEST):"
+    ls -lh "$MOD_DEST"/*.ko 2>/dev/null || echo "    (none)"
     echo ""
     echo "  Firmware:"
     find "$ROOTFS/lib/firmware" -type f -name "*.bin" 2>/dev/null | while read f; do

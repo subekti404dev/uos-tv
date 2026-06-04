@@ -410,6 +410,20 @@ build_rootfs() {
     mkdir -p "$ROOTFS_DIR/lib/firmware/rtlwifi"
     mkdir -p "$ROOTFS_DIR/lib/firmware/brcm"
 
+    # Determine kernel version for proper module install
+    local KERN_VER=""
+    if [ -f "$KERNEL_DIR/include/generated/utsrelease.h" ]; then
+        KERN_VER=$(grep UTS_RELEASE "$KERNEL_DIR/include/generated/utsrelease.h" | \
+            sed 's/.*"\(.*\)".*/\1/')
+    elif [ -f "$KERNEL_DIR/include/config/kernel.release" ]; then
+        KERN_VER=$(cat "$KERNEL_DIR/include/config/kernel.release")
+    else
+        KERN_VER="$KERNEL_VERSION.0"
+        warn "Cannot determine exact kernel version, using $KERN_VER"
+    fi
+    local MOD_DEST="$ROOTFS_DIR/lib/modules/$KERN_VER/extra"
+    mkdir -p "$MOD_DEST"
+
     # Download firmware if build-s905x-wifi.sh was run
     local FW_SRC="$TARGET_DIR/firmware"
     if [ -d "$FW_SRC" ]; then
@@ -417,18 +431,23 @@ build_rootfs() {
         log "  ✓ WiFi firmware copied from $FW_SRC"
     fi
 
-    # Copy WiFi kernel modules if built
+    # Copy WiFi kernel modules (out-of-tree) to versioned extra/
     local WIFI_MOD_DIR="$TARGET_DIR/wifi-drivers"
     if [ -d "$WIFI_MOD_DIR" ]; then
-        mkdir -p "$ROOTFS_DIR/lib/modules"
-        find "$WIFI_MOD_DIR" -name "*.ko" -exec cp {} "$ROOTFS_DIR/lib/modules/" \; 2>/dev/null || true
-        log "  ✓ WiFi kernel modules copied"
+        find "$WIFI_MOD_DIR" -name "*.ko" -exec cp {} "$MOD_DEST/" \; 2>/dev/null || true
+        log "  ✓ WiFi kernel modules → $MOD_DEST"
     fi
 
-    # Also look for modules in kernel tree staging
+    # Also copy staging modules from kernel tree
     if [ -d "$KERNEL_DIR/drivers/staging/rtl8723bs" ]; then
         find "$KERNEL_DIR/drivers/staging/rtl8723bs" -name "*.ko" \
-            -exec cp {} "$ROOTFS_DIR/lib/modules/" \; 2>/dev/null || true
+            -exec cp {} "$MOD_DEST/" \; 2>/dev/null || true
+    fi
+
+    # Copy mainline WiFI modules from kernel build
+    if [ -d "$KERNEL_DIR/drivers/net/wireless" ]; then
+        find "$KERNEL_DIR/drivers/net/wireless" -name "*.ko" \
+            -exec cp {} "$MOD_DEST/" \; 2>/dev/null || true
     fi
 
     # ── Kernel modules ──
@@ -439,9 +458,60 @@ build_rootfs() {
             INSTALL_MOD_PATH="$ROOTFS_DIR" modules_install 2>/dev/null || \
             warn "Module installation failed (non-fatal — may need root)"
         cd "$OLDPWD"
+
+        # Generate modules.dep for modprobe
+        if command -v depmod &>/dev/null && [ -f "$ROOTFS_DIR/lib/modules/$KERN_VER/modules.builtin" ]; then
+            log "Generating modules.dep..."
+            depmod -b "$ROOTFS_DIR" "$KERN_VER" 2>/dev/null || \
+                warn "depmod failed (non-fatal — modprobe won't work)"
+        else
+            warn "Skipping depmod (install kmod package: apt install kmod)"
+        fi
     fi
 
-    # ── Boot config ──
+    # ── WiFi config: wpa_supplicant ──
+    log "Creating wpa_supplicant template config..."
+    mkdir -p "$ROOTFS_DIR/etc/wpa_supplicant"
+    cat > "$ROOTFS_DIR/etc/wpa_supplicant/wpa_supplicant.conf" << 'WPA'
+# UOS TV — wpa_supplicant configuration
+# Managed by netmd. Do not edit manually — use Luna UI WiFi settings.
+ctrl_interface=/var/run/wpa_supplicant
+update_config=1
+country=ID
+
+# Networks added via Luna UI will appear here.
+# Example:
+# network={
+#   ssid="MyWiFi"
+#   psk="password123"
+# }
+WPA
+
+    # ── u-boot boot script ──
+    log "Creating u-boot boot.scr..."
+    cat > "$ROOTFS_DIR/boot/boot.cmd" << 'UBCMD'
+# UOS TV — Amlogic S905X u-boot boot script
+# Load kernel + DTB from SD card, set cmdline, boot
+
+setenv bootargs "console=ttyAML0,115200 root=/dev/mmcblk0p2 rw rootfstype=ext4 init=/sbin/init uos.console=ttyAML0"
+
+echo "UOS TV — Loading kernel..."
+load mmc 0:1 ${kernel_addr_r} Image
+echo "UOS TV — Loading DTB (UOS patched)..."
+load mmc 0:1 ${fdt_addr_r} meson-gxl-s905x-p212-uos.dtb
+
+echo "UOS TV — Booting!"
+booti ${kernel_addr_r} - ${fdt_addr_r}
+UBCMD
+    # Compile to boot.scr if mkimage available
+    if command -v mkimage &>/dev/null; then
+        mkimage -A arm64 -O linux -T script -C none \
+            -d "$ROOTFS_DIR/boot/boot.cmd" "$ROOTFS_DIR/boot/boot.scr" 2>/dev/null && \
+            log "  ✓ boot.scr created"
+    else
+        warn "  ! mkimage not found — boot.scr not compiled (extlinux will be used)"
+        warn "    Install: apt install u-boot-tools"
+    fi
     log "Creating boot configuration..."
     mkdir -p "$ROOTFS_DIR/boot"
     cat > "$ROOTFS_DIR/boot/extlinux.conf" << 'EXTLINUX'
@@ -608,6 +678,38 @@ case "${1:-}" in
     --image)
         create_sd_image
         ;;
+    --board)
+        BOARD_NAME="${2:-}"
+        if [[ -z "$BOARD_NAME" ]]; then
+            echo "Usage: $0 --board <name> [--all]"
+            echo "Known boards:"
+            for key in "${!BOARD_DB[@]}"; do
+                IFS='|' read -r _dtb _wifi _ram _notes <<< "${BOARD_DB[$key]}"
+                printf "  %-15s dtb=%-35s wifi=%-12s ram=%s\n" "$key" "$_dtb" "$_wifi" "$_ram"
+            done
+            exit 1
+        fi
+        _lookup="${BOARD_DB[${BOARD_NAME,,}]:-}"
+        if [[ -z "$_lookup" ]]; then
+            echo "Unknown board: $BOARD_NAME"
+            echo "Known: ${!BOARD_DB[*]}"
+            exit 1
+        fi
+        IFS='|' read -r DTB _wifi_chip _ram _notes <<< "$_lookup"
+        log "Board: $BOARD_NAME → DTB=$DTB, WiFi=$_wifi_chip, RAM=$_ram"
+        shift  # consume --board and its argument
+        shift
+        # Fall through to next case (typically --all)
+        build_kernel_docker
+        "$SCRIPT_DIR/build-s905x-wifi.sh" --chip "$_wifi_chip" \
+            --kernel "$KERNEL_DIR" --target "$TARGET_DIR" || \
+            warn "WiFi driver build for $_wifi_chip failed (non-fatal)"
+        build_rootfs
+        create_sd_image
+        log ""
+        log "=== Build Complete for $BOARD_NAME ==="
+        log "SD image: $OUTPUT_DIR/uos-tv-s905x.img"
+        ;;
     --all|"")
         log "Building everything for Amlogic S905X..."
         log ""
@@ -635,6 +737,8 @@ case "${1:-}" in
         log "  4. Power on → UOS TV boots!"
         ;;
     *)
-        echo "Usage: $0 [--kernel-only|--kernel-docker|--wifi|--rootfs-only|--uboot|--image|--all]"
+        echo "Usage: $0 [--board <name>] [--kernel-only|--kernel-docker|--wifi|--rootfs-only|--uboot|--image|--all]"
+        echo ""
+        echo "Known boards: ${!BOARD_DB[*]}"
         ;;
 esac

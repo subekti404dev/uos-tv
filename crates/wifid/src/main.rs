@@ -4,10 +4,11 @@
 //! waits for wlan0 interface, publishes "wifi.ready" event.
 //!
 //! Module loading strategy:
-//!   1. Check /sys/bus/sdio/devices/ for Realtek SDIO device
-//!   2. Load matching .ko from /lib/modules/
-//!   3. Wait up to 10s for wlan0 to appear
-//!   4. Publish stardust event and exit
+//!   1. Read kernel release from /proc/version or uname
+//!   2. Check /sys/bus/sdio/devices/ for Realtek/Broadcom SDIO device
+//!   3. Load matching .ko — try versioned paths first, then legacy flat
+//!   4. Wait up to 10s for wlan0 to appear
+//!   5. Publish stardust event and exit
 
 use std::fs;
 use std::path::Path;
@@ -16,7 +17,10 @@ use std::thread;
 use std::time::Duration;
 
 fn main() {
-    let module_dir = "/lib/modules";
+    // ── Determine kernel version ──
+    let kernel_ver = kernel_release();
+    let module_base = format!("/lib/modules/{}", kernel_ver);
+    println!("wifid: kernel release = {}", kernel_ver);
 
     // ── Detect SDIO WiFi chip ──
     let chip = detect_sdio_wifi();
@@ -28,22 +32,39 @@ fn main() {
     println!("wifid: detected {} → loading {}", chip_name, ko_name);
 
     // ── Load kernel module ──
-    let ko_path = format!("{}/{}", module_dir, ko_name);
-    if Path::new(&ko_path).exists() {
-        if let Err(e) = insmod(&ko_path) {
-            eprintln!("wifid: failed to load {}: {}", ko_name, e);
-            std::process::exit(1);
+    // Priority: 1) versioned extra/  2) versioned base  3) legacy flat
+    let candidates = vec![
+        format!("{}/extra/{}", module_base, ko_name),
+        format!("{}/{}", module_base, ko_name),
+        format!("/lib/modules/{}", ko_name), // legacy flat path
+    ];
+
+    let mut loaded = false;
+    for ko_path in &candidates {
+        if Path::new(ko_path).exists() {
+            println!("wifid: found {}", ko_path);
+            match insmod(ko_path) {
+                Ok(()) => {
+                    loaded = true;
+                    println!("wifid: loaded {}", ko_name);
+                    break;
+                }
+                Err(e) => eprintln!("wifid: insmod {} failed: {}", ko_path, e),
+            }
         }
-        println!("wifid: loaded {}", ko_name);
-    } else {
-        eprintln!("wifid: module {} not found at {}", ko_name, ko_path);
-        eprintln!("wifid: trying modprobe fallback...");
-        if Command::new("modprobe")
-            .arg(ko_name.trim_end_matches(".ko"))
-            .status()
-            .is_err()
-        {
-            eprintln!("wifid: modprobe also failed — continuing");
+    }
+
+    if !loaded {
+        // Try modprobe fallback (searches under /lib/modules/<release>/)
+        let name = ko_name.trim_end_matches(".ko");
+        eprintln!("wifid: direct insmod failed, trying modprobe {}...", name);
+        let status = Command::new("modprobe").arg(name).status();
+        if status.map(|s| s.success()).unwrap_or(false) {
+            println!("wifid: modprobe {} succeeded", name);
+        } else {
+            eprintln!("wifid: all load methods failed for {}", ko_name);
+            eprintln!("wifid: searched: {:?}", candidates);
+            std::process::exit(1);
         }
     }
 
@@ -65,12 +86,42 @@ fn main() {
     publish_ready();
 }
 
+/// Read kernel release string (e.g., "6.6.63-0-lts") from /proc/version
+/// or from uname -r as fallback.
+fn kernel_release() -> String {
+    // Try /proc/sys/kernel/osrelease first (simplest)
+    if let Ok(s) = fs::read_to_string("/proc/sys/kernel/osrelease") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            return s;
+        }
+    }
+    // Fallback: uname -r
+    if let Ok(out) = Command::new("uname").arg("-r").output() {
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !s.is_empty() {
+            return s;
+        }
+    }
+    // Last resort: parse /proc/version
+    if let Ok(ver) = fs::read_to_string("/proc/version") {
+        // Linux version 6.6.63-0-lts (...) ...
+        if let Some(start) = ver.find("version ") {
+            let rest = &ver[start + 8..];
+            if let Some(end) = rest.find(' ') {
+                return rest[..end].to_string();
+            }
+        }
+    }
+    "unknown".to_string()
+}
+
+/// Detect SDIO WiFi chip via /sys/bus/sdio/devices/
 fn detect_sdio_wifi() -> Option<(&'static str, &'static str)> {
     let sdio_dir = "/sys/bus/sdio/devices";
     if let Ok(entries) = fs::read_dir(sdio_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            // Read vendor and device IDs
             let vendor = fs::read_to_string(path.join("vendor"))
                 .unwrap_or_default()
                 .trim()
@@ -83,22 +134,18 @@ fn detect_sdio_wifi() -> Option<(&'static str, &'static str)> {
             match (vendor.as_str(), device.as_str()) {
                 // Realtek SDIO WiFi — covers RTL8189ES, RTL8189FS, RTL8723BS
                 ("0x024c", _) => {
-                    // Check which Realtek variant via modalias
                     let modalias = fs::read_to_string(path.join("modalias")).unwrap_or_default();
                     if modalias.contains("rtl8723") {
                         return Some(("RTL8723BS", "r8723bs.ko"));
                     }
                     if modalias.contains("rtl8189") {
-                        // Both 8189ES and 8189FS share similar chip ID
-                        // Try 8189es first, then 8189fs
                         return Some(("RTL8189ES/FS", "8189es.ko"));
                     }
-                    // Fallback: try all
-                    return Some(("Realtek SDIO WiFi", "8189es.ko"));
+                    return Some(("Realtek SDIO", "8189es.ko"));
                 }
                 // Broadcom SDIO WiFi
                 ("0x02d0", _) => {
-                    return Some(("Broadcom SDIO WiFi", "brcmfmac.ko"));
+                    return Some(("Broadcom SDIO", "brcmfmac.ko"));
                 }
                 _ => {}
             }
@@ -117,9 +164,8 @@ fn insmod(path: &str) -> Result<(), String> {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // Module already loaded is OK
         if stderr.contains("File exists") || stderr.contains("already") {
-            Ok(())
+            Ok(()) // module already loaded
         } else {
             Err(stderr.trim().to_string())
         }
@@ -127,7 +173,6 @@ fn insmod(path: &str) -> Result<(), String> {
 }
 
 fn publish_ready() {
-    // Best-effort stardust publish — don't fail if bus isn't up yet
     let _ = std::process::Command::new("stardust")
         .args([
             "pub",
