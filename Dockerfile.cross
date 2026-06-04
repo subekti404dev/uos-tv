@@ -71,9 +71,15 @@ RUN rustup target add aarch64-unknown-linux-musl
 # -C target-feature=+crt-static: force static linking
 # -C link-arg=-s: strip debug symbols (smaller binary)
 #
-# NOTE: lumind (Smithay compositor) is excluded from cross-compilation
-# because it needs native C libs (libdrm, libgbm, libinput, wayland).
-# Build lumind separately on a native aarch64 system or with full Debian sysroot.
+# NOTE: lumind (Smithay compositor) is excluded because it needs
+# native C libs (libdrm, libgbm, libinput, wayland, libudev).
+# Build lumind separately on a native aarch64 system.
+#
+# audiod: requires ALSA C lib (libasound2). Build with
+#   --no-default-features to skip ALSA backend (no-op audio).
+#   For real audio, build on native aarch64 with libasound2-dev.
+#
+# inputd: pure Rust — compiles fine with musl target.
 ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc
 ENV CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc
 ENV RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-s"

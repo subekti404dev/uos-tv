@@ -14,31 +14,31 @@ pub struct VolumeController {
     previous_volume: u32,
 
     // ALSA mixer handle (lazy init)
-    #[cfg(target_os = "linux")]
+    #[cfg(feature = "alsa-backend")]
     mixer: Option<alsa::mixer::Mixer>,
 
     // Cached selem_id for the "Master" control
-    #[cfg(target_os = "linux")]
+    #[cfg(feature = "alsa-backend")]
     master_selem: Option<alsa::mixer::SelemId>,
 }
 
 impl VolumeController {
     pub fn new() -> Self {
-        #[cfg(target_os = "linux")]
+        #[cfg(feature = "alsa-backend")]
         let (mixer, selem) = Self::open_alsa();
 
         Self {
             volume: DEFAULT_VOLUME,
             muted: false,
             previous_volume: DEFAULT_VOLUME,
-            #[cfg(target_os = "linux")]
+            #[cfg(feature = "alsa-backend")]
             mixer,
-            #[cfg(target_os = "linux")]
+            #[cfg(feature = "alsa-backend")]
             master_selem: selem,
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(feature = "alsa-backend")]
     fn open_alsa() -> (Option<alsa::mixer::Mixer>, Option<alsa::mixer::SelemId>) {
         match alsa::mixer::Mixer::new("default", false) {
             Ok(mixer) => {
@@ -53,9 +53,9 @@ impl VolumeController {
         }
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(feature = "alsa-backend"))]
     fn open_alsa() -> (Option<()>, Option<()>) {
-        tracing::debug!("ALSA: not available on this platform");
+        tracing::debug!("ALSA: not available — volume control is no-op");
         (None, None)
     }
 
@@ -98,7 +98,7 @@ impl VolumeController {
     }
 
     /// Apply volume/mute to hardware via ALSA.
-    #[cfg(target_os = "linux")]
+    #[cfg(feature = "alsa-backend")]
     fn apply(&self) {
         let long_vol: i64 = self.volume as i64;
 
@@ -120,7 +120,7 @@ impl VolumeController {
         );
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(feature = "alsa-backend"))]
     fn apply(&self) {
         tracing::debug!(
             "Volume: {}% {} (no-ALSA)",
@@ -130,7 +130,7 @@ impl VolumeController {
     }
 
     /// Get sound card info (ALSA-level).
-    #[cfg(target_os = "linux")]
+    #[cfg(feature = "alsa-backend")]
     pub fn cards(&self) -> Vec<CardInfo> {
         let mut cards = Vec::new();
         for item in alsa::card::Iter::new() {
@@ -144,7 +144,7 @@ impl VolumeController {
         cards
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(feature = "alsa-backend"))]
     pub fn cards(&self) -> Vec<CardInfo> {
         vec![]
     }

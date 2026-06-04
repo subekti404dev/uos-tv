@@ -52,7 +52,11 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/work" uos-builder \
             cargo build --release --target aarch64-unknown-linux-musl \
-            --workspace --exclude lumind --exclude audiod --exclude inputd
+            --workspace --exclude lumind --exclude audiod
+          # audiod builds separately: no ALSA (no libasound2 cross-compiled)
+          docker run --rm -v "$PWD:/work" uos-builder \
+            cargo build --release --target aarch64-unknown-linux-musl \
+            -p audiod --no-default-features
 
       - name: Upload ARM64 binaries
         uses: actions/upload-artifact@v4
@@ -227,7 +231,7 @@ jobs:
           cd "$KERNEL_DIR"
           NPROC=$(nproc)
           echo "Building with -j${NPROC}..."
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j${NPROC} Image 2>&1 | tail -30
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j${NPROC} Image zImage 2>&1 | tail -30
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j${NPROC} modules 2>&1 | tail -30
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             amlogic/meson-gxl-s905x-p212.dtb 2>&1 | tail -5
@@ -255,8 +259,57 @@ jobs:
           echo "=== Kernel Image ==="
           ls -lh "$KERNEL_DIR/arch/arm64/boot/Image"
           file "$KERNEL_DIR/arch/arm64/boot/Image"
+          echo "=== Kernel zImage ==="
+          ls -lh "$KERNEL_DIR/arch/arm64/boot/zImage"
+          file "$KERNEL_DIR/arch/arm64/boot/zImage"
           echo "=== DTB ==="
           ls -lh "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb"
+
+      # ═══════════════════════════════════════════════
+      # Armbian-style boot scripts
+      #   aml_autoscript: run by stock u-boot in update mode
+      #   s905_autoscript: chainloaded, boots kernel via uEnv.txt
+      #   Compiled as ARM 32-bit (stock Amlogic u-boot is 32-bit)
+      # ═══════════════════════════════════════════════
+      - name: Compile Armbian boot scripts
+        run: |
+          mkdir -p "$TARGET_DIR/boot"
+          echo "Compiling aml_autoscript..."
+          mkimage -A arm -O linux -T script -C none \
+            -d "$PROJECT_DIR/configs/aml_autoscript.cmd" \
+            "$TARGET_DIR/boot/aml_autoscript"
+          echo "Compiling s905_autoscript..."
+          mkimage -A arm -O linux -T script -C none \
+            -d "$PROJECT_DIR/configs/s905_autoscript.cmd" \
+            "$TARGET_DIR/boot/s905_autoscript"
+          echo "Compiling emmc_autoscript..."
+          mkimage -A arm -O linux -T script -C none \
+            -d "$PROJECT_DIR/configs/aml_autoscript.cmd" \
+            "$TARGET_DIR/boot/emmc_autoscript"
+          ls -lh "$TARGET_DIR/boot/"
+
+      - name: Generate uEnv.txt
+        run: |
+          cat > "$TARGET_DIR/boot/uEnv.txt" << 'UENVEOF'
+          LINUX=/zImage
+          INITRD=/uInitrd
+          FDT=/meson-gxl-s905x-p212-uos.dtb
+          APPEND=root=/dev/mmcblk1p2 rootwait rw rootfstype=ext4 console=ttyAML0,115200n8 console=tty0 no_console_suspend consoleblank=0 net.ifnames=0
+          UENVEOF
+          echo "uEnv.txt:"
+          cat "$TARGET_DIR/boot/uEnv.txt"
+
+      - name: Generate empty uInitrd (initramfs)
+        run: |
+          # s905_autoscript requires an initrd even though the kernel
+          # has ext4 and mmc built-in. Create a minimal empty initramfs.
+          mkdir -p /tmp/initrd-tmp
+          cd /tmp/initrd-tmp
+          echo | cpio -o -H newc 2>/dev/null | gzip -9 > /tmp/initrd.cpio.gz
+          mkimage -A arm64 -O linux -T ramdisk -C gzip \
+            -d /tmp/initrd.cpio.gz "$TARGET_DIR/boot/uInitrd"
+          echo "uInitrd: $(ls -lh "$TARGET_DIR/boot/uInitrd" | awk '{print $5}')"
+          rm -rf /tmp/initrd-tmp
 
       - name: Install kernel modules
         run: |
@@ -314,50 +367,15 @@ jobs:
           file build/u-boot/u-boot.bin
 
       # ═══════════════════════════════════════════════
-      # FIP: Amlogic Firmware Image Package
-      #   Combines BL2 + BL31 + u-boot (BL33) into signed
-      #   boot image that Amlogic BootROM can chainload.
-      #   Uses LibreELEC beelink-gt1 blobs (same GXL SoC).
+      # NOTE: No FIP bootloader at sector 1.
+      #   HG680P/B860H use Armbian-style boot:
+      #   stock u-boot → aml_autoscript → s905_autoscript → uEnv.txt → booti
+      #   FIP (BL2+BL31+BL33) is not needed — stock u-boot already handles
+      #   low-level init. The image boots when stock u-boot enters "update"
+      #   mode (triggered by "reboot update" from Android).
+      #   After first boot, aml_autoscript saves bootcmd to env, so
+      #   subsequent cold boots go directly to SD card.
       # ═══════════════════════════════════════════════
-      - name: Compute FIP cache key
-        id: fip-cache-key
-        run: |
-          echo "key=fip-gxl-beelink-gt1-v3" >> "$GITHUB_OUTPUT"
-
-      - name: Restore FIP cache
-        if: env.NOCACHE != 'true'
-        id: fip-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            build/s905x/fip
-          key: ${{ steps.fip-cache-key.outputs.key }}
-
-      - name: Clone LibreELEC amlogic-boot-fip
-        if: steps.fip-cache.outputs.cache-hit != 'true'
-        run: |
-          git clone --depth=1 \
-            https://github.com/LibreELEC/amlogic-boot-fip.git \
-            build/fip-repo
-
-      - name: Build FIP (beelink-gt1 + u-boot)
-        if: steps.fip-cache.outputs.cache-hit != 'true'
-        run: |
-          cd build/fip-repo
-          # Build signed FIP image using beelink-gt1 GXL blobs + our u-boot
-          # Output: build/s905x/fip/u-boot.bin (combined BL2+BL31+BL33)
-          mkdir -p ../s905x/fip
-          ./build-fip.sh beelink-gt1 ../u-boot/u-boot.bin ../s905x/fip 2>&1 | tail -10
-          echo "=== FIP artifacts ==="
-          ls -lh ../s905x/fip/
-
-      - name: Save FIP cache
-        if: env.NOCACHE != 'true' && steps.fip-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            build/s905x/fip
-          key: ${{ steps.fip-cache-key.outputs.key }}
 
       - name: Apply DTS overlay (disable BT)
         continue-on-error: true
@@ -419,7 +437,8 @@ jobs:
           mkdir -p "$ROOTFS_DIR/usr/bin" "$ROOTFS_DIR/sbin"
           BIN_DIR="target/aarch64-unknown-linux-musl/release"
           for bin in inis monitord stardustd lunad lumind netmd wifid \
-                   notifd otad pkgd logd dispald devmand powermand; do
+                   notifd otad pkgd logd dispald devmand powermand \
+                   inputd audiod; do
             [ -f "$BIN_DIR/$bin" ] && cp "$BIN_DIR/$bin" "$ROOTFS_DIR/usr/bin/"
           done
           cp "$BIN_DIR/inis" "$ROOTFS_DIR/sbin/init"
@@ -456,11 +475,27 @@ jobs:
           printf 'ctrl_interface=/var/run/wpa_supplicant\nupdate_config=1\ncountry=ID\n' \
             > "$ROOTFS_DIR/etc/wpa_supplicant/wpa_supplicant.conf"
 
-          mkdir -p "$ROOTFS_DIR/boot"
-          printf 'TIMEOUT 30\nDEFAULT uos-tv\n\nLABEL uos-tv\n  MENU LABEL UOS TV (S905X)\n  LINUX /Image\n  FDT /meson-gxl-s905x-p212-uos.dtb\n  APPEND console=ttyAML0,115200 root=/dev/mmcblk0p2 rw rootfstype=ext4 init=/sbin/init uos.console=ttyAML0\n\nLABEL uos-tv-fallback\n  MENU LABEL UOS TV (fallback)\n  LINUX /Image\n  FDT /meson-gxl-s905x-p212.dtb\n  APPEND console=ttyAML0,115200 root=/dev/mmcblk0p2 rw rootfstype=ext4 init=/sbin/init\n' \
-            > "$ROOTFS_DIR/boot/extlinux.conf"
-
           echo "Rootfs built: $(du -sh "$ROOTFS_DIR" | cut -f1)"
+
+      # ═══════════════════════════════════════════════
+      # Cog: WPE WebKit browser for Luna UI
+      #   Cross-compiled via Docker (Debian arm64 sysroot)
+      # ═══════════════════════════════════════════════
+      - name: Build Cog (WPE WebKit browser)
+        continue-on-error: true  # Cog is optional — Luna UI can run headless
+        run: |
+          echo "Building Cog (WPE WebKit) for aarch64..."
+          if command -v docker &>/dev/null; then
+            "$PROJECT_DIR/scripts/build-cog.sh" "$TARGET_DIR/cog" 2>&1 | tail -20
+            if [ -f "$TARGET_DIR/cog/usr/bin/cog" ]; then
+              echo "✓ Cog built"
+              cp "$TARGET_DIR/cog/usr/bin/cog" "$ROOTFS_DIR/usr/bin/" 2>/dev/null || true
+            else
+              echo "! Cog build skipped — Luna UI will run headless"
+            fi
+          else
+            echo "! Docker not available — skipping Cog build"
+          fi
 
       - name: Create SD card image
         run: |
@@ -473,24 +508,16 @@ jobs:
           echo "Creating ${IMG_SIZE_MB}MB image..."
           dd if=/dev/zero of="$IMG" bs=1M count="$IMG_SIZE_MB" status=none
 
-          # Partition: p1 starts at sector 4096 to leave room for u-boot
-          # Amlogic GXL: BootROM loads BL2 from sectors 1-63, BL3x from 64-95
-          # u-boot (BL33) goes at sector 96, first partition at 4096
+          # Partition: p1 at sector 4096, type c (FAT32 LBA)
+          # Sector 0: MBR (partition table only, no bootstrap code)
+          # Sectors 1-4095: zeroed (no FIP — Armbian-style boot)
           printf 'label: dos\nunit: sectors\n1 : start=4096, size=%d, type=c\n2 : start=%d, type=83\n' \
             $((BOOT_SIZE * 2048)) $((BOOT_SIZE * 2048 + 4096)) | sfdisk "$IMG"
 
-          # Write Amlogic FIP at sector 1 (offset 512)
-          # FIP contains: boot header + BL2 + BL31 + u-boot (BL33)
-          # BootROM scans sector 1+ for Amlogic signed boot signature
-          if [ -f build/s905x/fip/u-boot.bin ]; then
-            echo "Writing Amlogic FIP to SD image at sector 1..."
-            dd if=build/s905x/fip/u-boot.bin of="$IMG" bs=512 seek=1 conv=notrunc status=none
-            FIP_SIZE=$(stat -c%s build/s905x/fip/u-boot.bin)
-            echo "FIP written: ${FIP_SIZE} bytes at sectors 1+"
-          else
-            echo "WARNING: No FIP image — image will NOT boot on Amlogic hardware"
-            echo "  BootROM requires signed BL2+BL31+u-boot FIP at sector 1"
-          fi
+          # Zero the FIP area (sectors 1-4095). Stock u-boot skips SD card
+          # if it finds Amlogic FIP signature here.
+          echo "Zeroing sectors 1-4095 (FIP area)..."
+          dd if=/dev/zero of="$IMG" bs=512 seek=1 count=4095 conv=notrunc status=none
 
           LOOP=$(sudo losetup -fP --show "$IMG")
           sudo mkfs.vfat -F32 "${LOOP}p1"
@@ -498,10 +525,23 @@ jobs:
 
           TMPMNT=$(mktemp -d)
           sudo mount "${LOOP}p1" "$TMPMNT"
-          sudo cp "$KERNEL_DIR/arch/arm64/boot/Image" "$TMPMNT/"
-          sudo cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb" "$TMPMNT/"
-          sudo cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB-uos.dtb" "$TMPMNT/" 2>/dev/null || true
-          sudo cp "$ROOTFS_DIR/boot/extlinux.conf" "$TMPMNT/" 2>/dev/null || true
+
+          # Armbian-style boot files: autoscripts → uEnv.txt → booti
+          echo "Installing Armbian-style boot files..."
+          sudo cp "$TARGET_DIR/boot/aml_autoscript" "$TMPMNT/"
+          sudo cp "$TARGET_DIR/boot/s905_autoscript" "$TMPMNT/"
+          sudo cp "$TARGET_DIR/boot/emmc_autoscript" "$TMPMNT/"
+          sudo cp "$TARGET_DIR/boot/uEnv.txt" "$TMPMNT/"
+          sudo cp "$TARGET_DIR/boot/uInitrd" "$TMPMNT/"
+
+          # Kernel + DTB (zImage for self-decompressing kernel)
+          sudo cp "$KERNEL_DIR/arch/arm64/boot/zImage" "$TMPMNT/"
+          sudo cp "$KERNEL_DIR/arch/arm64/boot/Image" "$TMPMNT/"  # raw Image as fallback
+          sudo cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb" "$TMPMNT/meson-gxl-s905x-p212.dtb"
+          sudo cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB-uos.dtb" "$TMPMNT/meson-gxl-s905x-p212-uos.dtb" 2>/dev/null || true
+
+          echo "Boot partition contents:"
+          ls -lh "$TMPMNT/"
           sudo umount "$TMPMNT"
 
           sudo mount "${LOOP}p2" "$TMPMNT"
