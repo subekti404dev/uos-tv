@@ -4,9 +4,13 @@ binary: /usr/bin/cog
 args:
   - "--platform=drm"
   - "file:///usr/share/uos/luna/index.html"
+env:
+  - "WEBKIT_FORCE_SANDBOX=0"
+  - "COG_PLATFORM=drm"
 dependencies:
   - stardust
   - dispald
+  - lumind
 restart: always
 restart_delay_ms: 2000
 max_crash_count: 3

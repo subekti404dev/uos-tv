@@ -58,9 +58,9 @@ fn run_linux() {
     });
 
     if std::path::Path::new("/usr/bin/cog").exists() {
-        spawn_cog(&cog_platform, &luna_url);
+        tracing::info!("/usr/bin/cog found — cog service will render Luna UI");
     } else {
-        tracing::warn!("/usr/bin/cog not found — lumind will stay alive for supervisor health");
+        tracing::warn!("/usr/bin/cog not found — Luna UI renderer unavailable");
     }
 
     tracing::info!("lumind ready (platform={cog_platform}, url={luna_url})");
@@ -104,22 +104,6 @@ fn find_input_devices() -> Vec<String> {
             }
         })
         .collect()
-}
-
-#[cfg(target_os = "linux")]
-fn spawn_cog(platform: &str, luna_url: &str) {
-    let mut cmd = std::process::Command::new("/usr/bin/cog");
-    cmd.arg(format!("--platform={platform}"))
-        .arg(luna_url)
-        .env("COG_PLATFORM", platform)
-        .env("WEBKIT_FORCE_SANDBOX", "0")
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-
-    match cmd.spawn() {
-        Ok(child) => tracing::info!("Launched Cog PID {} ({platform}) → {luna_url}", child.id()),
-        Err(e) => tracing::warn!("Failed to launch Cog: {e}"),
-    }
 }
 
 #[cfg(not(target_os = "linux"))]
