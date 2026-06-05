@@ -80,6 +80,11 @@ EOF
 # Ensure no mainline u-boot chainload file is present for HG680P/B860H stock u-boot path.
 sudo rm -f "$BOOT_MNT/u-boot.ext"
 
+# Armbian first-login is triggered by /etc/profile.d when a login shell starts.
+# Remove it BEFORE any chroot command. Do not use `bash -l` in this script.
+sudo rm -f "$ROOT_MNT/root/.not_logged_in_yet" "$ROOT_MNT/etc/armbian_first_run.txt" "$ROOT_MNT/boot/armbian_first_run.txt" 2>/dev/null || true
+sudo rm -f "$ROOT_MNT/etc/profile.d/armbian-check-first-login.sh" "$ROOT_MNT/etc/profile.d/armbian-check-first-login-reboot.sh" 2>/dev/null || true
+
 # Install qemu static for optional chroot apt install.
 if [[ "$INSTALL_PACKAGES" == "true" ]]; then
   echo "Installing packages into Armbian rootfs..."
@@ -93,8 +98,8 @@ if [[ "$INSTALL_PACKAGES" == "true" ]]; then
   PKGS=$(grep -Ev '^\s*(#|$)' "$PACKAGES_FILE" | tr '\n' ' ')
   # Avoid interactive maintainer prompts in CI. Some Armbian/Debian packages may
   # ask for the default command shell; force bash/noninteractive defaults.
-  sudo chroot "$ROOT_MNT" /bin/bash -lc "printf 'dash dash/sh boolean false\n' | debconf-set-selections || true"
-  sudo chroot "$ROOT_MNT" /bin/bash -lc "export DEBIAN_FRONTEND=noninteractive DEBIAN_PRIORITY=critical APT_LISTCHANGES_FRONTEND=none UCF_FORCE_CONFFOLD=1 SHELL=/bin/bash; apt-get update && timeout 25m apt-get install -y --no-install-recommends -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold $PKGS" || {
+  sudo chroot "$ROOT_MNT" /bin/bash -c "printf 'dash dash/sh boolean false\n' | debconf-set-selections || true"
+  sudo chroot "$ROOT_MNT" /bin/bash -c "export DEBIAN_FRONTEND=noninteractive DEBIAN_PRIORITY=critical APT_LISTCHANGES_FRONTEND=none UCF_FORCE_CONFFOLD=1 SHELL=/bin/bash; apt-get update && timeout 25m apt-get install -y --no-install-recommends -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold $PKGS" || {
     echo "WARN: package install failed or timed out; continuing with debug image" >&2
   }
 fi
@@ -158,8 +163,8 @@ EOF
 sudo chmod 0755 "$ROOT_MNT/usr/bin/uos-shell-launcher"
 
 # Dedicated user for UI and deterministic credentials for non-interactive boot.
-sudo chroot "$ROOT_MNT" /bin/bash -lc "id -u uos >/dev/null 2>&1 || useradd -m -s /bin/bash -G audio,video,input,netdev,sudo uos" || true
-sudo chroot "$ROOT_MNT" /bin/bash -lc "echo 'root:uosroot1234' | chpasswd; echo 'uos:uos1234' | chpasswd; chsh -s /bin/bash root; chsh -s /bin/bash uos" || true
+sudo chroot "$ROOT_MNT" /bin/bash -c "id -u uos >/dev/null 2>&1 || useradd -m -s /bin/bash -G audio,video,input,netdev,sudo uos" || true
+sudo chroot "$ROOT_MNT" /bin/bash -c "echo 'root:uosroot1234' | chpasswd; echo 'uos:uos1234' | chpasswd; chsh -s /bin/bash root; chsh -s /bin/bash uos" || true
 
 # Minimal systemd units. Keep existing Armbian services intact for debug-full.
 sudo tee "$ROOT_MNT/etc/systemd/system/uos-shell.service" >/dev/null <<'EOF'
@@ -197,18 +202,18 @@ RestartSec=2
 WantedBy=multi-user.target
 EOF
 
-sudo chroot "$ROOT_MNT" /bin/bash -lc "systemctl enable stardustd.service uos-shell.service" || true
-sudo chroot "$ROOT_MNT" /bin/bash -lc "systemctl enable NetworkManager.service 2>/dev/null || true" || true
+sudo chroot "$ROOT_MNT" /bin/bash -c "systemctl enable stardustd.service uos-shell.service" || true
+sudo chroot "$ROOT_MNT" /bin/bash -c "systemctl enable NetworkManager.service 2>/dev/null || true" || true
 # Disable Armbian interactive first-login / web setup wizard; UOS image must
 # boot straight into services/browser without asking for shell/user setup on
 # HDMI/serial or spawning the armbian-armbiansetup AP.
-sudo chroot "$ROOT_MNT" /bin/bash -lc "systemctl disable armbian-firstlogin.service armbian-first-run.service armbian-resize-filesystem.service armbian-ramlog.service armbian-zram-config.service 2>/dev/null || true" || true
-sudo chroot "$ROOT_MNT" /bin/bash -lc "systemctl mask armbian-firstlogin.service armbian-first-run.service armbian-resize-filesystem.service 2>/dev/null || true" || true
+sudo chroot "$ROOT_MNT" /bin/bash -c "systemctl disable armbian-firstlogin.service armbian-first-run.service armbian-resize-filesystem.service armbian-ramlog.service armbian-zram-config.service 2>/dev/null || true" || true
+sudo chroot "$ROOT_MNT" /bin/bash -c "systemctl mask armbian-firstlogin.service armbian-first-run.service armbian-resize-filesystem.service 2>/dev/null || true" || true
 sudo find "$ROOT_MNT/etc/systemd" "$ROOT_MNT/lib/systemd" "$ROOT_MNT/usr/lib/systemd" -type f \( -iname '*first*' -o -iname '*setup*' -o -iname '*armbian*.service' \) -print 2>/dev/null | while read -r unit; do
   base=$(basename "$unit")
   case "$base" in
     *first*|*setup*|armbian-first*|armbian-resize*)
-      sudo chroot "$ROOT_MNT" /bin/bash -lc "systemctl disable '$base' 2>/dev/null || true; systemctl mask '$base' 2>/dev/null || true" || true
+      sudo chroot "$ROOT_MNT" /bin/bash -c "systemctl disable '$base' 2>/dev/null || true; systemctl mask '$base' 2>/dev/null || true" || true
       ;;
   esac
 done
@@ -223,7 +228,7 @@ sudo rm -f "$ROOT_MNT/var/lib/dbus/machine-id" 2>/dev/null || true
 
 if [[ "$CLEANUP_MODE" == "minimize" ]]; then
   echo "Applying minimize cleanup..."
-  sudo chroot "$ROOT_MNT" /bin/bash -lc "apt-get clean || true"
+  sudo chroot "$ROOT_MNT" /bin/bash -c "apt-get clean || true"
   sudo rm -rf "$ROOT_MNT/var/cache/apt/archives"/*.deb "$ROOT_MNT/tmp"/* "$ROOT_MNT/var/tmp"/* 2>/dev/null || true
   sudo find "$ROOT_MNT/var/log" -type f -delete 2>/dev/null || true
 else
