@@ -371,6 +371,9 @@ fn spawn_monitord() -> nix::unistd::Pid {
 }
 
 fn main_loop() {
+    let monitord_path = "/usr/bin/monitord";
+    let mut monitord_pid: Option<nix::unistd::Pid> = None;
+
     eprintln!("[inis] Entering main loop (reaping children)...");
 
     unsafe {
@@ -382,16 +385,59 @@ fn main_loop() {
         }
     }
 
+    let mut restart_count: u32 = 0;
+    const MAX_RESTARTS: u32 = 5;
+
     loop {
+        // Restart monitord if it died
+        if monitord_pid.is_none() {
+            if restart_count >= MAX_RESTARTS {
+                eprintln!(
+                    "[inis] monitord restarted {MAX_RESTARTS} times — giving up, dropping to shell"
+                );
+                match unsafe { nix::unistd::fork() } {
+                    Ok(ForkResult::Child) => {
+                        let _ = Command::new("/bin/sh").exec();
+                        std::process::exit(1);
+                    }
+                    _ => {}
+                }
+                // Parent: just wait indefinitely
+                loop {
+                    let _ = waitpid(None, Some(WaitPidFlag::WNOHANG));
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                }
+            }
+
+            restart_count += 1;
+            let delay = std::cmp::min(restart_count * 2, 10) as u64;
+            eprintln!("[inis] monitord restart #{restart_count} in {delay}s...");
+            std::thread::sleep(std::time::Duration::from_secs(delay));
+
+            monitord_pid = Some(spawn_monitord());
+            eprintln!("[inis] monitord restarted (PID {})", monitord_pid.unwrap());
+        }
+
+        let current_pid = monitord_pid.unwrap();
+
         match waitpid(None, Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::Exited(pid, code)) => {
                 eprintln!("[inis] Child {pid} exited with code {code}");
+                if pid == current_pid {
+                    monitord_pid = None;
+                }
             }
             Ok(WaitStatus::Signaled(pid, sig, _)) => {
                 eprintln!("[inis] Child {pid} killed by signal {sig:?}");
+                if pid == current_pid {
+                    monitord_pid = None;
+                }
             }
             Ok(_) => std::thread::sleep(std::time::Duration::from_millis(100)),
-            Err(nix::Error::ECHILD) => std::thread::sleep(std::time::Duration::from_secs(1)),
+            Err(nix::Error::ECHILD) => {
+                monitord_pid = None;
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
             Err(e) => {
                 eprintln!("[inis] waitpid error: {e}");
                 std::thread::sleep(std::time::Duration::from_secs(1));

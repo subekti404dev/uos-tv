@@ -586,14 +586,12 @@ impl Supervisor {
                                     svc.manifest.crash_window_secs
                                 ));
 
-                                if svc.manifest.critical {
-                                    tracing::error!(
-                                        "CRITICAL service {} crashed-loop — SYSTEM PANIC",
-                                        name
-                                    );
-                                    self.shutdown_all().await;
-                                    std::process::exit(1);
-                                }
+                                // Jangan exit — biarkan inis (PID 1) handle restart monitord.
+                                // Watchdog tetap dikick oleh monitord yang masih hidup.
+                                tracing::error!(
+                                    "CRITICAL service {} crashed-loop — marking dead, monitor continues",
+                                    name
+                                );
                             } else if should_restart {
                                 to_restart.push((name.clone(), svc.manifest.restart_delay_ms));
                             } else {
