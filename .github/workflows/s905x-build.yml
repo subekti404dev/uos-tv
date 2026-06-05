@@ -304,13 +304,11 @@ jobs:
         run: |
           # s905_autoscript requires an initrd even though the kernel
           # has ext4 and mmc built-in. Create a minimal empty initramfs.
-          mkdir -p /tmp/initrd-tmp
-          cd /tmp/initrd-tmp
+          mkdir -p "$TARGET_DIR/boot"
           echo | cpio -o -H newc 2>/dev/null | gzip -9 > /tmp/initrd.cpio.gz
           mkimage -A arm64 -O linux -T ramdisk -C gzip \
             -d /tmp/initrd.cpio.gz "$TARGET_DIR/boot/uInitrd"
           echo "uInitrd: $(ls -lh "$TARGET_DIR/boot/uInitrd" | awk '{print $5}')"
-          rm -rf /tmp/initrd-tmp
 
       - name: Install kernel modules
         run: |
