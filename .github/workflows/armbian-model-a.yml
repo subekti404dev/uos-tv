@@ -157,23 +157,32 @@ jobs:
             -o build/kernel-headers/kernel.tar.gz
           mkdir -p build/kernel-headers/extracted
           tar xzf build/kernel-headers/kernel.tar.gz -C build/kernel-headers/extracted
-          # List what we got
-          echo "=== tarball contents ==="
-          ls -la build/kernel-headers/extracted/
-          # Extract header tarball
-          for f in build/kernel-headers/extracted/header-*.tar.gz; do
+          # Listing: ophub tarball has a version subdirectory
+          echo "=== extracted contents ==="
+          find build/kernel-headers/extracted -maxdepth 2 -ls
+          # Extract header tarball (it's in a version subdir)
+          for f in build/kernel-headers/extracted/*/header-*.tar.gz; do
             echo "Extracting $f"
             tar xzf "$f" -C build/kernel-headers/extracted/ || true
           done
-          ls -la build/kernel-headers/extracted/
+          echo "=== after header extraction ==="
+          find build/kernel-headers/extracted -maxdepth 2 -ls
 
       - name: Prepare kernel build tree
         run: |
-          # Ophub header tarball extracts to usr/src/linux-headers-6.12.91-ophub/
-          HEADER_DIR=$(find build/kernel-headers/extracted -maxdepth 4 -name "Makefile" -path "*linux-headers*" | head -1 | xargs dirname 2>/dev/null || echo "")
+          # Ophub header tarball extracts flat: Makefile at extraction root
+          HEADER_DIR=""
+          # Case 1: Makefile directly under extracted/
+          if [[ -f "build/kernel-headers/extracted/Makefile" ]]; then
+            HEADER_DIR="$PWD/build/kernel-headers/extracted"
+          fi
+          # Case 2: usr/src/linux-headers-* layout
           if [[ -z "$HEADER_DIR" ]]; then
-            # Fallback: find any Makefile under usr/src
-            HEADER_DIR=$(find build/kernel-headers/extracted -maxdepth 5 -name "Makefile" -path "*/usr/src/*" | head -1 | xargs dirname 2>/dev/null || echo "")
+            HEADER_DIR=$(find build/kernel-headers/extracted -maxdepth 4 -name "Makefile" -path "*linux-headers*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null || echo "")
+          fi
+          # Case 3: any Makefile in usr/src/
+          if [[ -z "$HEADER_DIR" ]]; then
+            HEADER_DIR=$(find build/kernel-headers/extracted -maxdepth 5 -name "Makefile" -path "*/usr/src/*" 2>/dev/null | head -1 | xargs dirname 2>/dev/null || echo "")
           fi
           if [[ -z "$HEADER_DIR" ]]; then
             echo "ERROR: kernel headers not found!"
@@ -182,9 +191,10 @@ jobs:
           fi
           echo "HEADER_DIR=$HEADER_DIR"
           echo "header_dir=$HEADER_DIR" >> "$GITHUB_ENV"
-          # Verify: should contain scripts/ and arch/
+          # Verify
           ls -la "$HEADER_DIR/" | head -10
-          ls "$HEADER_DIR/scripts/mod/modpost" 2>/dev/null && echo "modpost OK" || echo "WARN: no modpost"
+          ls "$HEADER_DIR/scripts/mod/modpost" 2>/dev/null && echo "modpost OK" || echo "WARN: no modpost, checking Makefile..."
+          grep -c "SRCARCH" "$HEADER_DIR/Makefile" 2>/dev/null && echo "Makefile OK" || echo "WARN: Makefile missing"
 
       - name: Cache RTL8189FS source
         id: rtl-cache
