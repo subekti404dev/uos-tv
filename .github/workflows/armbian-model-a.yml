@@ -119,17 +119,21 @@ jobs:
           cd build/cog-debs
           BASE="http://ftp.debian.org/debian/pool/main"
           printf 'Downloading Cog + WPE WebKit deps from Debian trixie...\n'
-          # Core: cog + libwpewebkit
+          # Core: cog + libwpewebkit stack
           curl -fL --retry 5 -o libwpe-1.0-1.deb      "$BASE/libw/libwpe/libwpe-1.0-1_1.16.3-1+b1_arm64.deb"
           curl -fL --retry 5 -o libwpebackend.deb     "$BASE/w/wpebackend-fdo/libwpebackend-fdo-1.0-1_1.16.1-1+b1_arm64.deb"
           curl -fL --retry 5 -o libwpewebkit.deb      "$BASE/w/wpewebkit/libwpewebkit-2.0-1_2.52.4-1_arm64.deb"
           curl -fL --retry 5 -o cog.deb              "$BASE/c/cog/cog_0.18.5-1+b1_arm64.deb"
-          # Deps
+          # Deps chain
           curl -fL --retry 5 -o libjpeg62-turbo.deb   "$BASE/libj/libjpeg-turbo/libjpeg62-turbo_2.1.5-4_arm64.deb"
           curl -fL --retry 5 -o libflite1.deb         "$BASE/f/flite/libflite1_2.2-7_arm64.deb"
           curl -fL --retry 5 -o libwoff1.deb          "$BASE/w/woff2/libwoff1_1.0.2-3+b1_arm64.deb"
           curl -fL --retry 5 -o libmanette.deb        "$BASE/libm/libmanette/libmanette-0.2-0_0.2.13-1+b1_arm64.deb"
           curl -fL --retry 5 -o libavif16.deb         "$BASE/liba/libavif/libavif16_1.4.1-1+b1_arm64.deb"
+          curl -fL --retry 5 -o libgav1-2.deb         "$BASE/libg/libgav1/libgav1-2_0.20.0-2+b1_arm64.deb"
+          curl -fL --retry 5 -o librav1e0.8.deb       "$BASE/r/rust-rav1e/librav1e0.8_0.8.1-10_arm64.deb"
+          curl -fL --retry 5 -o libsvtav1enc4.deb     "$BASE/s/svt-av1/libsvtav1enc4_4.1.0+dfsg-1_arm64.deb"
+          curl -fL --retry 5 -o libabsl.deb           "$BASE/a/abseil/libabsl20260107_20260107.0-5_arm64.deb"
           printf 'Done. Total size: '; du -sh .
           ls -lh
 
