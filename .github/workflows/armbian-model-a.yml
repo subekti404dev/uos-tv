@@ -146,7 +146,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/kernel-headers
-          key: ophub-headers-${{ env.KERNEL_VER }}-v1
+          key: ophub-headers-${{ env.KERNEL_VER }}-v2
 
       - name: Download kernel headers
         if: steps.kernel-cache.outputs.cache-hit != 'true'
@@ -157,26 +157,34 @@ jobs:
             -o build/kernel-headers/kernel.tar.gz
           mkdir -p build/kernel-headers/extracted
           tar xzf build/kernel-headers/kernel.tar.gz -C build/kernel-headers/extracted
-          # Extract the boot tarball which contains the kernel + headers
-          for f in build/kernel-headers/extracted/boot-*.tar.gz; do
+          # List what we got
+          echo "=== tarball contents ==="
+          ls -la build/kernel-headers/extracted/
+          # Extract header tarball
+          for f in build/kernel-headers/extracted/header-*.tar.gz; do
+            echo "Extracting $f"
             tar xzf "$f" -C build/kernel-headers/extracted/ || true
-          done
-          # Find and extract any header tarball
-          for f in build/kernel-headers/extracted/dt-*.tar.gz build/kernel-headers/extracted/*header*.tar.gz; do
-            tar xzf "$f" -C build/kernel-headers/extracted/ 2>/dev/null || true
           done
           ls -la build/kernel-headers/extracted/
 
       - name: Prepare kernel build tree
         run: |
-          # Find the kernel source/headers path
-          HEADER_DIR=$(find build/kernel-headers/extracted -name "Makefile" -path "*/usr/src/*" | head -1 | xargs dirname 2>/dev/null || echo "")
+          # Ophub header tarball extracts to usr/src/linux-headers-6.12.91-ophub/
+          HEADER_DIR=$(find build/kernel-headers/extracted -maxdepth 4 -name "Makefile" -path "*linux-headers*" | head -1 | xargs dirname 2>/dev/null || echo "")
           if [[ -z "$HEADER_DIR" ]]; then
-            echo "Headers not found in extracted tarball; trying alt layout..."
-            HEADER_DIR=$(find build/kernel-headers/extracted -name "Makefile" -path "*6.12*" | head -1 | xargs dirname 2>/dev/null || echo "")
+            # Fallback: find any Makefile under usr/src
+            HEADER_DIR=$(find build/kernel-headers/extracted -maxdepth 5 -name "Makefile" -path "*/usr/src/*" | head -1 | xargs dirname 2>/dev/null || echo "")
+          fi
+          if [[ -z "$HEADER_DIR" ]]; then
+            echo "ERROR: kernel headers not found!"
+            find build/kernel-headers/extracted -type d | head -30
+            exit 1
           fi
           echo "HEADER_DIR=$HEADER_DIR"
           echo "header_dir=$HEADER_DIR" >> "$GITHUB_ENV"
+          # Verify: should contain scripts/ and arch/
+          ls -la "$HEADER_DIR/" | head -10
+          ls "$HEADER_DIR/scripts/mod/modpost" 2>/dev/null && echo "modpost OK" || echo "WARN: no modpost"
 
       - name: Cache RTL8189FS source
         id: rtl-cache
@@ -228,6 +236,7 @@ jobs:
     name: Customize Armbian Image (Model A)
     runs-on: ubuntu-latest
     needs: [rust-cross, build-cog, build-rtl8189fs]
+    if: success() || failure()
     continue-on-error: true
     timeout-minutes: 90
     env:
