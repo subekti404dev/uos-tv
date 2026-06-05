@@ -180,10 +180,15 @@ async fn main() -> std::io::Result<()> {
         i += 1;
     }
 
-    // Ensure root exists
-    if !PathBuf::from(&root).exists() {
-        tracing::error!("Root directory not found: {}", root);
-        std::process::exit(1);
+    // Ensure root exists, create if missing
+    let root_path = PathBuf::from(&root);
+    if !root_path.exists() {
+        tracing::warn!("Root directory not found, creating: {}", root);
+        if let Err(e) = std::fs::create_dir_all(&root_path) {
+            tracing::error!("Failed to create root directory {}: {}", root, e);
+            std::process::exit(1);
+        }
+        tracing::info!("Created root directory: {}", root);
     }
 
     let addr = format!("0.0.0.0:{}", port);

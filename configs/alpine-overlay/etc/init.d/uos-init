@@ -27,22 +27,8 @@ start() {
         ln -sf /data/etc /etc
     fi
 
-    # Start stardust IPC broker first
-    if [ -x /usr/bin/stardustd ]; then
-        einfo "Starting stardustd (IPC broker)"
-        STARDUST_LOG=info /usr/bin/stardustd \
-            --socket /run/uos/bus.sock \
-            --ws-addr 127.0.0.1:9090 &
-        sleep 1
-    fi
-
-    # Start logging daemon
-    if [ -x /usr/bin/logd ]; then
-        einfo "Starting logd"
-        /usr/bin/logd --socket /run/uos/log.sock --log-dir /var/log/uos &
-    fi
-
-    # Start all other services via monitord
+    # monitord handles ALL service lifecycle (startup, health checks, crash recovery) including stardust, logd, and all other services.
+    # Do NOT manually start stardustd or logd here — monitord manages them.
     if [ -x /usr/bin/monitord ]; then
         einfo "Starting monitord (service supervisor)"
         /usr/bin/monitord --config /usr/share/uos/monitord.yaml &
