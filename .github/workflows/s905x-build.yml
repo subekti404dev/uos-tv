@@ -77,6 +77,8 @@ jobs:
             target/aarch64-unknown-linux-musl/release/dispald
             target/aarch64-unknown-linux-musl/release/devmand
             target/aarch64-unknown-linux-musl/release/powermand
+            target/aarch64-unknown-linux-musl/release/audiod
+            target/aarch64-unknown-linux-musl/release/inputd
             target/aarch64-unknown-linux-musl/release/casync-rs
             target/aarch64-unknown-linux-musl/release/rauc-rs
             target/aarch64-unknown-linux-musl/release/update-verify
