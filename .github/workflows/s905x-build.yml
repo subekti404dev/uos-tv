@@ -325,6 +325,12 @@ jobs:
           tar xzf boot-${ARMB_VER}-ophub.tar.gz -C "$GITHUB_WORKSPACE/$ARMB_DIR"
           # Extract Amlogic DTB tree
           tar xzf dtb-amlogic-${ARMB_VER}-ophub.tar.gz -C "$GITHUB_WORKSPACE/$ARMB_DIR"
+          # Create standard names expected by uEnv.txt and create-image
+          ln -sf vmlinuz-${ARMB_VER}-ophub "$GITHUB_WORKSPACE/$ARMB_DIR/zImage"
+          ln -sf uInitrd-${ARMB_VER}-ophub "$GITHUB_WORKSPACE/$ARMB_DIR/uInitrd"
+          # Move DTB files to dtb/amlogic/ tree
+          mkdir -p "$GITHUB_WORKSPACE/$ARMB_DIR/dtb/amlogic"
+          mv "$GITHUB_WORKSPACE/$ARMB_DIR"/*.dtb "$GITHUB_WORKSPACE/$ARMB_DIR/dtb/amlogic/"
           echo "=== Armbian kernel files ==="
           ls -lh "$GITHUB_WORKSPACE/$ARMB_DIR/"
           echo "=== DTB tree ==="
