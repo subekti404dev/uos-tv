@@ -5,10 +5,7 @@ args:
   - "--root"
   - "/var/www/luna"
   - "--port"
-  - "80"
-caps:
-  keep:
-    - net_bind_service
+  - "8080"
 dependencies:
   - stardust
 restart: always
@@ -17,4 +14,4 @@ max_crash_count: 5
 crash_window_secs: 30
 critical: false
 startup_timeout_secs: 5
-health_check: tcp:80
+health_check: process
