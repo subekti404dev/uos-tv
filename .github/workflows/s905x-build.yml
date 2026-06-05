@@ -325,17 +325,27 @@ jobs:
           tar xzf boot-${ARMB_VER}-ophub.tar.gz -C "$GITHUB_WORKSPACE/$ARMB_DIR"
           # Extract Amlogic DTB tree
           tar xzf dtb-amlogic-${ARMB_VER}-ophub.tar.gz -C "$GITHUB_WORKSPACE/$ARMB_DIR"
-          # Create standard names expected by uEnv.txt and create-image
-          ln -sf vmlinuz-${ARMB_VER}-ophub "$GITHUB_WORKSPACE/$ARMB_DIR/zImage"
-          ln -sf uInitrd-${ARMB_VER}-ophub "$GITHUB_WORKSPACE/$ARMB_DIR/uInitrd"
-          # Move DTB files to dtb/amlogic/ tree
-          mkdir -p "$GITHUB_WORKSPACE/$ARMB_DIR/dtb/amlogic"
-          mv "$GITHUB_WORKSPACE/$ARMB_DIR"/*.dtb "$GITHUB_WORKSPACE/$ARMB_DIR/dtb/amlogic/"
-          echo "=== Armbian kernel files ==="
-          ls -lh "$GITHUB_WORKSPACE/$ARMB_DIR/"
-          echo "=== DTB tree ==="
-          ls -lh "$GITHUB_WORKSPACE/$ARMB_DIR/dtb/amlogic/" | head -10
           rm -rf /tmp/armbian-kernel.tar.gz /tmp/armbian-extract
+
+      - name: Prepare Armbian kernel (always run)
+        run: |
+          ARMB_DIR="build/armbian-kernel"
+          ARMB_VER="6.12.91"
+          # Create standard names expected by uEnv.txt
+          if [ ! -L "$ARMB_DIR/zImage" ]; then
+            ln -sf vmlinuz-${ARMB_VER}-ophub "$ARMB_DIR/zImage"
+          fi
+          if [ ! -L "$ARMB_DIR/uInitrd" ]; then
+            ln -sf uInitrd-${ARMB_VER}-ophub "$ARMB_DIR/uInitrd"
+          fi
+          # Move DTB files to dtb/amlogic/ tree if not already
+          if [ ! -d "$ARMB_DIR/dtb/amlogic" ]; then
+            mkdir -p "$ARMB_DIR/dtb/amlogic"
+            mv "$ARMB_DIR"/*.dtb "$ARMB_DIR/dtb/amlogic/" 2>/dev/null || true
+          fi
+          echo "=== Armbian kernel prepared ==="
+          ls -lh "$ARMB_DIR/zImage" "$ARMB_DIR/uInitrd"
+          echo "Has DTB: $(find "$ARMB_DIR/dtb" -name '*.dtb' 2>/dev/null | wc -l) files"
 
       - name: Save Armbian kernel cache
         if: env.NOCACHE != 'true' && steps.armbian-kernel-cache.outputs.cache-hit != 'true'
@@ -343,13 +353,6 @@ jobs:
         with:
           path: build/armbian-kernel
           key: ${{ steps.armbian-kernel-cache-key.outputs.key }}
-
-      - name: Verify Armbian kernel
-        run: |
-          ARMB_DIR="build/armbian-kernel"
-          echo "=== Armbian kernel ready ==="
-          ls -lh "$ARMB_DIR/zImage" "$ARMB_DIR/uInitrd"
-          echo "Has DTB: $(find "$ARMB_DIR/dtb" -name '*.dtb' 2>/dev/null | wc -l) files"
 
       - name: Generate uEnv.txt
         run: |
