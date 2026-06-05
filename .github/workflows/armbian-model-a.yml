@@ -38,6 +38,10 @@ on:
       - 'Cargo.lock'
       - 'Dockerfile.cross'
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   rust-cross:
     name: Rust ARM64 Cross-Compile

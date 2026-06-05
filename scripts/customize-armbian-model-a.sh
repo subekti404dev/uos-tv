@@ -91,8 +91,11 @@ if [[ "$INSTALL_PACKAGES" == "true" ]]; then
   sudo rm -f "$ROOT_MNT/etc/resolv.conf"
   printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee "$ROOT_MNT/etc/resolv.conf" >/dev/null
   PKGS=$(grep -Ev '^\s*(#|$)' "$PACKAGES_FILE" | tr '\n' ' ')
-  sudo chroot "$ROOT_MNT" /bin/bash -lc "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $PKGS" || {
-    echo "WARN: package install failed; continuing with debug image" >&2
+  # Avoid interactive maintainer prompts in CI. Some Armbian/Debian packages may
+  # ask for the default command shell; force bash/noninteractive defaults.
+  sudo chroot "$ROOT_MNT" /bin/bash -lc "printf 'dash dash/sh boolean false\n' | debconf-set-selections || true"
+  sudo chroot "$ROOT_MNT" /bin/bash -lc "export DEBIAN_FRONTEND=noninteractive DEBIAN_PRIORITY=critical APT_LISTCHANGES_FRONTEND=none UCF_FORCE_CONFFOLD=1 SHELL=/bin/bash; apt-get update && timeout 25m apt-get install -y --no-install-recommends -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold $PKGS" || {
+    echo "WARN: package install failed or timed out; continuing with debug image" >&2
   }
 fi
 
@@ -195,6 +198,11 @@ EOF
 
 sudo chroot "$ROOT_MNT" /bin/bash -lc "systemctl enable stardustd.service uos-shell.service" || true
 sudo chroot "$ROOT_MNT" /bin/bash -lc "systemctl enable NetworkManager.service 2>/dev/null || true" || true
+# Disable Armbian interactive first-login wizard; UOS image must boot straight
+# into services/browser without asking for shell/user setup on HDMI/serial.
+sudo chroot "$ROOT_MNT" /bin/bash -lc "systemctl disable armbian-firstlogin.service armbian-first-run.service armbian-resize-filesystem.service 2>/dev/null || true" || true
+sudo rm -f "$ROOT_MNT/etc/profile.d/armbian-check-first-login.sh" 2>/dev/null || true
+sudo rm -f "$ROOT_MNT/root/.not_logged_in_yet" "$ROOT_MNT/etc/armbian_first_run.txt" 2>/dev/null || true
 
 # First boot identity cleanup; preserve debug-full tools/log dirs.
 sudo truncate -s 0 "$ROOT_MNT/etc/machine-id" 2>/dev/null || true
