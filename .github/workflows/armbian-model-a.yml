@@ -95,34 +95,49 @@ jobs:
           retention-days: 7
 
   build-cog:
-    name: Build Cog (WPE WebKit)
+    name: Fetch Cog + WPE WebKit (Pre-built Debian)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 10
     env:
-      COG_OUTPUT: build/cog
       NOCACHE: ${{ inputs.nocache || 'false' }}
+      DEB_CACHE_KEY: cog-debs-trixie-v1
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache Cog build
+      - name: Cache Cog debs
         if: env.NOCACHE != 'true'
         id: cog-cache
         uses: actions/cache@v4
         with:
-          path: build/cog
-          key: cog-arm64-${{ hashFiles('scripts/build-cog.sh') }}-v1
+          path: build/cog-debs
+          key: ${{ env.DEB_CACHE_KEY }}
 
-      - name: Build Cog via Docker
+      - name: Download Cog + WPE debs from Debian trixie
         if: steps.cog-cache.outputs.cache-hit != 'true'
         run: |
-          mkdir -p build/cog
-          scripts/build-cog.sh build/cog
+          mkdir -p build/cog-debs
+          cd build/cog-debs
+          BASE="http://ftp.debian.org/debian/pool/main"
+          printf 'Downloading Cog + WPE WebKit deps from Debian trixie...\n'
+          # Core: cog + libwpewebkit
+          curl -fL --retry 5 -o libwpe-1.0-1.deb      "$BASE/libw/libwpe/libwpe-1.0-1_1.16.3-1+b1_arm64.deb"
+          curl -fL --retry 5 -o libwpebackend.deb     "$BASE/w/wpebackend-fdo/libwpebackend-fdo-1.0-1_1.16.1-1+b1_arm64.deb"
+          curl -fL --retry 5 -o libwpewebkit.deb      "$BASE/w/wpewebkit/libwpewebkit-2.0-1_2.52.4-1_arm64.deb"
+          curl -fL --retry 5 -o cog.deb              "$BASE/c/cog/cog_0.18.5-1+b1_arm64.deb"
+          # Deps
+          curl -fL --retry 5 -o libjpeg62-turbo.deb   "$BASE/libj/libjpeg-turbo/libjpeg62-turbo_2.1.5-4_arm64.deb"
+          curl -fL --retry 5 -o libflite1.deb         "$BASE/f/flite/libflite1_2.2-7_arm64.deb"
+          curl -fL --retry 5 -o libwoff1.deb          "$BASE/w/woff2/libwoff1_1.0.2-3+b1_arm64.deb"
+          curl -fL --retry 5 -o libmanette.deb        "$BASE/libm/libmanette/libmanette-0.2-0_0.2.13-1+b1_arm64.deb"
+          curl -fL --retry 5 -o libavif16.deb         "$BASE/liba/libavif/libavif16_1.4.1-1+b1_arm64.deb"
+          printf 'Done. Total size: '; du -sh .
+          ls -lh
 
       - name: Upload Cog artifact
         uses: actions/upload-artifact@v4
         with:
           name: cog-arm64
-          path: build/cog/
+          path: build/cog-debs/
           retention-days: 7
 
   build-rtl8189fs:
@@ -274,7 +289,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: cog-arm64
-          path: build/cog/
+          path: build/cog-debs/
         continue-on-error: true
 
       - name: Download RTL8189FS artifact

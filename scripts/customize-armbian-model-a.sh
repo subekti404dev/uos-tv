@@ -321,14 +321,15 @@ if [[ -f "$PROJECT_DIR/build/wifi/8189fs.ko" ]]; then
   sudo chroot "$ROOT_MNT" /bin/bash -c "depmod -a 6.12.91-ophub 2>/dev/null || depmod" || true
 fi
 
-# Inject Cog (WPE WebKit) if built by CI.
-if [[ -f "$PROJECT_DIR/build/cog/usr/bin/cog" ]]; then
-  echo "Installing Cog (WPE WebKit)..."
-  sudo install -m 0755 "$PROJECT_DIR/build/cog/usr/bin/cog" "$ROOT_MNT/usr/bin/cog"
-  if [[ -d "$PROJECT_DIR/build/cog/usr/lib" ]]; then
-    sudo cp -r "$PROJECT_DIR/build/cog/usr/lib/"* "$ROOT_MNT/usr/lib/" 2>/dev/null || true
-  fi
-  sudo ldconfig "$ROOT_MNT" 2>/dev/null || true
+# Inject Cog (WPE WebKit) if pre-built debs from CI.
+COG_DEB_DIR="$PROJECT_DIR/build/cog-debs"
+if [[ -f "$COG_DEB_DIR/cog.deb" ]]; then
+  echo "Installing Cog + WPE WebKit (Debian trixie pre-built)..."
+  sudo cp "$COG_DEB_DIR"/*.deb "$ROOT_MNT/tmp/"
+  sudo chroot "$ROOT_MNT" /bin/bash -c "cd /tmp && dpkg --force-depends -i *.deb 2>&1 || true"
+  sudo rm -f "$ROOT_MNT/tmp/"*.deb
+  # Verify
+  sudo chroot "$ROOT_MNT" /bin/bash -c "cog --version 2>&1 || ldd /usr/bin/cog 2>&1 | head -5" || echo "WARN: cog not runnable, but debs installed"
 fi
 
 # Disable Armbian interactive first-login / web setup wizard; UOS image must
