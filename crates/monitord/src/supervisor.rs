@@ -134,7 +134,17 @@ impl Supervisor {
             self.wait_until_running(dep).await?;
         }
 
-        // Spawn process
+        // Spawn process — skip if binary missing to prevent crash loop
+        if !std::path::Path::new(&manifest.binary).exists() {
+            let msg = format!("binary not found: {}", manifest.binary);
+            tracing::warn!("{}: {}", name, msg);
+            {
+                let mut svc = self.services.get_mut(name).unwrap();
+                svc.status = ServiceStatus::Failed(msg);
+            }
+            return Err(format!("{}: binary not found", name));
+        }
+
         let mut cmd = Command::new(&manifest.binary);
         cmd.args(&manifest.args);
 
@@ -409,8 +419,12 @@ impl Supervisor {
     }
 
     /// Initialize hardware watchdog device.
-    /// Returns file descriptor if /dev/watchdog is available.
+    /// Returns file descriptor if /dev/watchdog is available AND UOS_WATCHDOG=1 is set.
+    /// Disabled by default — only enable after confirming system stability.
     fn init_watchdog(&self) -> Option<std::fs::File> {
+        if std::env::var("UOS_WATCHDOG").unwrap_or_default() != "1" {
+            return None;
+        }
         match std::fs::OpenOptions::new()
             .write(true)
             .open("/dev/watchdog")
