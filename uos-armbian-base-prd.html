@@ -733,7 +733,110 @@ key: rust-aarch64-${{ hashFiles('Cargo.lock', 'crates/**/Cargo.toml') }}</pre>
     </section>
 
     <section>
-      <h2>19. Rekomendasi Implementasi Pertama</h2>
+      <h2>19. Status Implementasi Saat Ini</h2>
+      <div class="callout">
+        <strong>Status terbaru:</strong> implementasi Model A sudah dibuat di branch terpisah <code>armbian-base-model-a</code>. CI Armbian Model A berhasil selesai pada run <code>26999805152</code> setelah root cause Armbian first-login wizard diperbaiki.
+      </div>
+
+      <h3>19.1 Branch dan Commit</h3>
+      <table>
+        <thead><tr><th>Item</th><th>Nilai</th></tr></thead>
+        <tbody>
+          <tr><td>Branch</td><td><code>armbian-base-model-a</code></td></tr>
+          <tr><td>Workflow baru</td><td><code>.github/workflows/armbian-model-a.yml</code></td></tr>
+          <tr><td>Script customize</td><td><code>scripts/customize-armbian-model-a.sh</code></td></tr>
+          <tr><td>Package manifest</td><td><code>configs/armbian-model-a/packages.txt</code></td></tr>
+          <tr><td>Commit awal Model A</td><td><code>f207650 armbian: add Model A image customization workflow</code></td></tr>
+          <tr><td>Commit first-login fix final</td><td><code>a9a2587 fix: remove Armbian first-login marker before any chroot login shell</code></td></tr>
+          <tr><td>CI run sukses</td><td><code>26999805152</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>19.2 Yang Sudah Dikerjakan</h3>
+      <ul>
+        <li>Membuat workflow CI baru untuk Model A agar tidak mengganggu workflow S905X lama.</li>
+        <li>Workflow download image Armbian proven dari release <code>ophub/amlogic-s9xxx-armbian</code>.</li>
+        <li>Menambahkan cache terpisah untuk Armbian base image.</li>
+        <li>Menambahkan package list untuk kebutuhan UOS TV awal: NetworkManager, WiFi tools, ALSA, Xorg, Openbox, Chromium.</li>
+        <li>Membuat script customize image yang mount boot/root partition, inject UOS binaries/config/UI, dan preserve boot/kernel/modules/DTB asli Armbian.</li>
+        <li>Mengatur <code>uEnv.txt</code> agar tetap memakai boot flow proven: <code>LINUX=/zImage</code>, <code>INITRD=/uInitrd</code>, <code>FDT=/dtb/amlogic/meson-gxl-s905x-p212.dtb</code>.</li>
+        <li>Menghapus <code>u-boot.ext</code> agar stock u-boot tidak chainload mainline u-boot yang sebelumnya gagal.</li>
+        <li>Membuat launcher browser: <code>/usr/bin/uos-shell-launcher</code> → <code>startx</code> → <code>/usr/bin/uos-browser</code> → Chromium kiosk ke <code>file:///usr/share/uos/luna/index.html</code>.</li>
+        <li>Membuat systemd unit <code>uos-shell.service</code> dan <code>stardustd.service</code>.</li>
+        <li>Membuat user <code>uos</code>, set shell <code>/bin/bash</code>, dan password default development.</li>
+        <li>Menambahkan output metadata: <code>manifest.json</code>, <code>SHA256SUMS</code>, dan <code>cache-summary.txt</code>.</li>
+      </ul>
+
+      <h3>19.3 Root Cause yang Ditemukan di CI</h3>
+      <div class="danger callout">
+        <strong>Root cause:</strong> Armbian first-login wizard terpicu oleh CI sendiri karena script menggunakan <code>chroot ... /bin/bash -lc</code>. Opsi <code>-l</code> menjalankan login shell, sehingga <code>/etc/profile.d/armbian-check-first-login.sh</code> dieksekusi dan memanggil <code>/usr/lib/armbian/armbian-firstlogin</code> selama file <code>/root/.not_logged_in_yet</code> masih ada.
+      </div>
+      <p>Gejala yang muncul:</p>
+      <pre>Web Configuration Available!
+Connect to Wi-Fi SSID: armbian-armbiansetup
+Then open http://10.42.0.1 in your browser
+Or continue with CLI setup below...
+stty: standard input: Inappropriate ioctl for device
+Warning: Weak password, it is WAY too short!
+read @issues</pre>
+      <p>File pemicu di rootfs Armbian:</p>
+      <pre>/etc/profile.d/armbian-check-first-login.sh
+/root/.not_logged_in_yet
+/usr/lib/armbian/armbian-firstlogin</pre>
+      <p>Isi logic pemicu:</p>
+      <pre>if [ -w /root/ -a -f /root/.not_logged_in_yet ]; then
+    bash /usr/lib/armbian/armbian-firstlogin
+fi</pre>
+
+      <h3>19.4 Fix yang Sudah Diterapkan</h3>
+      <ul>
+        <li>Hapus marker first-login sebelum menjalankan chroot apa pun:</li>
+      </ul>
+      <pre>/root/.not_logged_in_yet
+/etc/armbian_first_run.txt
+/boot/armbian_first_run.txt
+/etc/profile.d/armbian-check-first-login.sh
+/etc/profile.d/armbian-check-first-login-reboot.sh</pre>
+      <ul>
+        <li>Mengganti semua chroot command dari:</li>
+      </ul>
+      <pre>chroot "$ROOT_MNT" /bin/bash -lc "..."</pre>
+      <p>menjadi:</p>
+      <pre>chroot "$ROOT_MNT" /bin/bash -c "..."</pre>
+      <ul>
+        <li>Menambahkan disable/mask first-run related services.</li>
+        <li>Menambahkan noninteractive apt install agar package install tidak menunggu input.</li>
+        <li>Workflow default shell dipaksa <code>bash</code>.</li>
+      </ul>
+      <p>Hasil: CI run <code>26999805152</code> selesai <span class="status-ok">success</span> dan log tidak lagi menunjukkan prompt first-login.</p>
+
+      <h3>19.5 Status Artifact</h3>
+      <table>
+        <thead><tr><th>Item</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Build CI</td><td class="status-ok">Success</td></tr>
+          <tr><td>Artifact GitHub Actions</td><td class="status-ok">Tersedia sebagai <code>uos-tv-armbian-model-a-b860h</code></td></tr>
+          <tr><td>Download lokal</td><td class="status-risk">Sempat gagal karena koneksi reset saat download file besar dari GitHub Actions.</td></tr>
+          <tr><td>Copy ke SSD</td><td class="status-risk">Belum selesai karena download lokal belum berhasil.</td></tr>
+          <tr><td>Hardware test</td><td class="status-risk">Belum dilakukan untuk artifact Model A hasil CI sukses.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>19.6 Next Steps Langsung</h3>
+      <ol>
+        <li>Retry download artifact dari run <code>26999805152</code>.</li>
+        <li>Copy image ke <code>/Volumes/SSD/uos-tv-armbian-model-a-b860h.img</code>.</li>
+        <li>Burn image ke SD card.</li>
+        <li>Boot dengan <code>reboot update</code> di HG680P/B860H.</li>
+        <li>Verifikasi tidak ada lagi Armbian first-run prompt.</li>
+        <li>Verifikasi systemd naik dan <code>uos-shell.service</code> menjalankan Xorg + Chromium kiosk.</li>
+        <li>Jika browser gagal tampil, debug dari journal: <code>journalctl -u uos-shell.service -b</code>.</li>
+        <li>Setelah browser tampil, baru mulai cleanup/minimize.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>20. Rekomendasi Implementasi Pertama</h2>
       <div class="callout">
         <strong>Langkah paling pragmatis:</strong> buat CI baru atau mode baru di workflow existing bernama <code>armbian-base</code> yang memodifikasi image Armbian proven, bukan membangun Debian rootfs dari nol.
       </div>
