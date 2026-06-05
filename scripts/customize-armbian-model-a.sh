@@ -88,7 +88,8 @@ if [[ "$INSTALL_PACKAGES" == "true" ]]; then
   sudo mount --bind /dev/pts "$ROOT_MNT/dev/pts"
   sudo mount -t proc proc "$ROOT_MNT/proc"
   sudo mount -t sysfs sysfs "$ROOT_MNT/sys"
-  sudo cp /etc/resolv.conf "$ROOT_MNT/etc/resolv.conf"
+  sudo rm -f "$ROOT_MNT/etc/resolv.conf"
+  printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee "$ROOT_MNT/etc/resolv.conf" >/dev/null
   PKGS=$(grep -Ev '^\s*(#|$)' "$PACKAGES_FILE" | tr '\n' ' ')
   sudo chroot "$ROOT_MNT" /bin/bash -lc "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $PKGS" || {
     echo "WARN: package install failed; continuing with debug image" >&2
