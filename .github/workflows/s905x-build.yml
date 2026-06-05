@@ -219,6 +219,7 @@ jobs:
           ./scripts/config -e TMPFS
           ./scripts/config -e OF
           ./scripts/config -e OF_OVERLAY
+          ./scripts/config -e KERNEL_GZIP
           ./scripts/config --set-val NR_CPUS 4
           ./scripts/config --set-val HZ 250
           # Disable -Werror so out-of-tree WiFi drivers compile
@@ -231,7 +232,7 @@ jobs:
           cd "$KERNEL_DIR"
           NPROC=$(nproc)
           echo "Building with -j${NPROC}..."
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j${NPROC} Image zImage 2>&1 | tail -30
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j${NPROC} Image Image.gz 2>&1 | tail -30
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j${NPROC} modules 2>&1 | tail -30
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             amlogic/meson-gxl-s905x-p212.dtb 2>&1 | tail -5
@@ -259,9 +260,9 @@ jobs:
           echo "=== Kernel Image ==="
           ls -lh "$KERNEL_DIR/arch/arm64/boot/Image"
           file "$KERNEL_DIR/arch/arm64/boot/Image"
-          echo "=== Kernel zImage ==="
-          ls -lh "$KERNEL_DIR/arch/arm64/boot/zImage"
-          file "$KERNEL_DIR/arch/arm64/boot/zImage"
+          echo "=== Kernel Image.gz ==="
+          ls -lh "$KERNEL_DIR/arch/arm64/boot/Image.gz"
+          file "$KERNEL_DIR/arch/arm64/boot/Image.gz"
           echo "=== DTB ==="
           ls -lh "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb"
 
@@ -291,7 +292,7 @@ jobs:
       - name: Generate uEnv.txt
         run: |
           cat > "$TARGET_DIR/boot/uEnv.txt" << 'UENVEOF'
-          LINUX=/zImage
+          LINUX=/Image.gz
           INITRD=/uInitrd
           FDT=/meson-gxl-s905x-p212-uos.dtb
           APPEND=root=/dev/mmcblk1p2 rootwait rw rootfstype=ext4 console=ttyAML0,115200n8 console=tty0 no_console_suspend consoleblank=0 net.ifnames=0
@@ -534,8 +535,8 @@ jobs:
           sudo cp "$TARGET_DIR/boot/uEnv.txt" "$TMPMNT/"
           sudo cp "$TARGET_DIR/boot/uInitrd" "$TMPMNT/"
 
-          # Kernel + DTB (zImage for self-decompressing kernel)
-          sudo cp "$KERNEL_DIR/arch/arm64/boot/zImage" "$TMPMNT/"
+          # Kernel + DTB (Image.gz = self-decompressing ARM64 kernel)
+          sudo cp "$KERNEL_DIR/arch/arm64/boot/Image.gz" "$TMPMNT/"
           sudo cp "$KERNEL_DIR/arch/arm64/boot/Image" "$TMPMNT/"  # raw Image as fallback
           sudo cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb" "$TMPMNT/meson-gxl-s905x-p212.dtb"
           sudo cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB-uos.dtb" "$TMPMNT/meson-gxl-s905x-p212-uos.dtb" 2>/dev/null || true
