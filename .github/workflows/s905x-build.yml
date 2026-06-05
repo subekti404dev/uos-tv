@@ -291,26 +291,70 @@ jobs:
             "$TARGET_DIR/boot/emmc_autoscript"
           ls -lh "$TARGET_DIR/boot/"
 
+      # ═══════════════════════════════════════════════
+      # Armbian kernel (ophub pre-built, proven on HG680P)
+      #   Download pre-built kernel 6.12.91 with Amlogic patches.
+      #   Our self-built kernel (6.6) is kept for debugging.
+      # ═══════════════════════════════════════════════
+      - name: Compute Armbian kernel cache key
+        id: armbian-kernel-cache-key
+        run: echo "key=armbian-kernel-6.12.91-ophub" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Armbian kernel cache
+        if: env.NOCACHE != 'true'
+        id: armbian-kernel-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/armbian-kernel
+          key: ${{ steps.armbian-kernel-cache-key.outputs.key }}
+
+      - name: Download Armbian kernel (ophub)
+        if: steps.armbian-kernel-cache.outputs.cache-hit != 'true'
+        run: |
+          ARMB_DIR="build/armbian-kernel"
+          ARMB_VER="6.12.91"
+          ARMB_URL="https://github.com/ophub/kernel/releases/download/kernel_stable/${ARMB_VER}.tar.gz"
+          mkdir -p "$ARMB_DIR"
+          echo "Downloading Armbian kernel ${ARMB_VER}..."
+          curl -sfL "$ARMB_URL" -o /tmp/armbian-kernel.tar.gz
+          echo "Extracting..."
+          tar xzf /tmp/armbian-kernel.tar.gz -C /tmp/armbian-extract
+          cd /tmp/armbian-extract/${ARMB_VER}
+          # Extract boot files (zImage, uInitrd, etc)
+          tar xzf boot-${ARMB_VER}-ophub.tar.gz -C "$GITHUB_WORKSPACE/$ARMB_DIR"
+          # Extract Amlogic DTB tree
+          tar xzf dtb-amlogic-${ARMB_VER}-ophub.tar.gz -C "$GITHUB_WORKSPACE/$ARMB_DIR"
+          echo "=== Armbian kernel files ==="
+          ls -lh "$GITHUB_WORKSPACE/$ARMB_DIR/"
+          echo "=== DTB tree ==="
+          ls -lh "$GITHUB_WORKSPACE/$ARMB_DIR/dtb/amlogic/" | head -10
+          rm -rf /tmp/armbian-kernel.tar.gz /tmp/armbian-extract
+
+      - name: Save Armbian kernel cache
+        if: env.NOCACHE != 'true' && steps.armbian-kernel-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/armbian-kernel
+          key: ${{ steps.armbian-kernel-cache-key.outputs.key }}
+
+      - name: Verify Armbian kernel
+        run: |
+          ARMB_DIR="build/armbian-kernel"
+          echo "=== Armbian kernel ready ==="
+          ls -lh "$ARMB_DIR/zImage" "$ARMB_DIR/uInitrd"
+          echo "Has DTB: $(find "$ARMB_DIR/dtb" -name '*.dtb' 2>/dev/null | wc -l) files"
+
       - name: Generate uEnv.txt
         run: |
           cat > "$TARGET_DIR/boot/uEnv.txt" << 'UENVEOF'
-          LINUX=/Image.gz
+          # Use Armbian pre-built kernel (proven on S905X hardware)
+          LINUX=/zImage
           INITRD=/uInitrd
-          FDT=/meson-gxl-s905x-p212-uos.dtb
+          FDT=/dtb/amlogic/meson-gxl-s905x-p212.dtb
           APPEND=root=/dev/mmcblk1p2 rootwait rw rootfstype=ext4 console=ttyAML0,115200n8 console=tty0 no_console_suspend consoleblank=0 net.ifnames=0
           UENVEOF
           echo "uEnv.txt:"
           cat "$TARGET_DIR/boot/uEnv.txt"
-
-      - name: Generate empty uInitrd (initramfs)
-        run: |
-          # s905_autoscript requires an initrd even though the kernel
-          # has ext4 and mmc built-in. Create a minimal empty initramfs.
-          mkdir -p "$TARGET_DIR/boot"
-          echo | cpio -o -H newc 2>/dev/null | gzip -9 > /tmp/initrd.cpio.gz
-          mkimage -A arm64 -O linux -T ramdisk -C gzip \
-            -d /tmp/initrd.cpio.gz "$TARGET_DIR/boot/uInitrd"
-          echo "uInitrd: $(ls -lh "$TARGET_DIR/boot/uInitrd" | awk '{print $5}')"
 
       - name: Install kernel modules
         run: |
@@ -533,13 +577,19 @@ jobs:
           sudo cp "$TARGET_DIR/boot/s905_autoscript" "$TMPMNT/"
           sudo cp "$TARGET_DIR/boot/emmc_autoscript" "$TMPMNT/"
           sudo cp "$TARGET_DIR/boot/uEnv.txt" "$TMPMNT/"
-          sudo cp "$TARGET_DIR/boot/uInitrd" "$TMPMNT/"
+          # Armbian kernel (pre-built ophub, proven on S905X)
+          echo "Installing Armbian kernel (6.12.91-ophub)..."
+          ARMB_DIR="build/armbian-kernel"
+          sudo cp "$ARMB_DIR/zImage" "$TMPMNT/"
+          sudo cp "$ARMB_DIR/uInitrd" "$TMPMNT/"
+          sudo cp -r "$ARMB_DIR/dtb/" "$TMPMNT/"
+          sudo cp "$ARMB_DIR/System.map-"* "$TMPMNT/" 2>/dev/null || true
+          sudo cp "$ARMB_DIR/config-"* "$TMPMNT/" 2>/dev/null || true
 
-          # Kernel + DTB (Image.gz = self-decompressing ARM64 kernel)
-          sudo cp "$KERNEL_DIR/arch/arm64/boot/Image.gz" "$TMPMNT/"
-          sudo cp "$KERNEL_DIR/arch/arm64/boot/Image" "$TMPMNT/"  # raw Image as fallback
-          sudo cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb" "$TMPMNT/meson-gxl-s905x-p212.dtb"
-          sudo cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB-uos.dtb" "$TMPMNT/meson-gxl-s905x-p212-uos.dtb" 2>/dev/null || true
+          # Our self-built kernel + DTB (for debugging / fallback)
+          sudo cp "$KERNEL_DIR/arch/arm64/boot/Image" "$TMPMNT/Image-ours" 2>/dev/null || true
+          sudo cp "$KERNEL_DIR/arch/arm64/boot/Image.gz" "$TMPMNT/Image-ours.gz" 2>/dev/null || true
+          sudo cp "$KERNEL_DIR/arch/arm64/boot/dts/amlogic/$DTB.dtb" "$TMPMNT/meson-gxl-s905x-p212-ours.dtb" 2>/dev/null || true
 
           echo "Boot partition contents:"
           ls -lh "$TMPMNT/"
