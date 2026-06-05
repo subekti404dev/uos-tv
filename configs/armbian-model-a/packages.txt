@@ -1,0 +1,19 @@
+# Packages installed into the Armbian rootfs for UOS TV Model A.
+# Keep this file stable: CI apt cache key is based on this file.
+ca-certificates
+curl
+jq
+network-manager
+wpasupplicant
+wireless-regdb
+iw
+alsa-utils
+libasound2
+udev
+dbus
+python3
+xserver-xorg-core
+xinit
+x11-xserver-utils
+openbox
+chromium

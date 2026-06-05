@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PRD — UOS TV Armbian Base Migration</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #11182d;
+      --panel-2: #17213a;
+      --text: #e8eefc;
+      --muted: #9fb0d0;
+      --accent: #65d6ff;
+      --accent-2: #7cffa6;
+      --warn: #ffd166;
+      --danger: #ff6b6b;
+      --line: rgba(255,255,255,.12);
+      --code: #07111f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top left, #19345c 0, transparent 34%), var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    a { color: var(--accent); }
+    .page { max-width: 1180px; margin: 0 auto; padding: 44px 24px 80px; }
+    .hero {
+      border: 1px solid var(--line);
+      background: linear-gradient(135deg, rgba(101,214,255,.16), rgba(124,255,166,.08)), rgba(17,24,45,.88);
+      border-radius: 28px;
+      padding: 36px;
+      box-shadow: 0 24px 80px rgba(0,0,0,.35);
+    }
+    .eyebrow { color: var(--accent-2); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; font-size: 12px; }
+    h1 { margin: 8px 0 12px; font-size: clamp(34px, 5vw, 58px); line-height: 1.05; }
+    h2 { margin-top: 42px; font-size: 28px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+    h3 { margin-top: 26px; font-size: 21px; color: #dce8ff; }
+    h4 { margin: 18px 0 8px; color: var(--accent); }
+    .subtitle { color: var(--muted); font-size: 18px; max-width: 900px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+    .pill { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: #dfe9ff; border-radius: 999px; padding: 8px 12px; font-size: 13px; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 18px; }
+    .card {
+      grid-column: span 6;
+      border: 1px solid var(--line);
+      background: rgba(17,24,45,.82);
+      border-radius: 20px;
+      padding: 22px;
+    }
+    .card.third { grid-column: span 4; }
+    .card.full { grid-column: 1 / -1; }
+    @media (max-width: 820px) { .card, .card.third { grid-column: 1 / -1; } }
+    .callout { border-left: 4px solid var(--accent); background: rgba(101,214,255,.08); padding: 14px 16px; border-radius: 12px; margin: 16px 0; }
+    .warning { border-left-color: var(--warn); background: rgba(255,209,102,.08); }
+    .danger { border-left-color: var(--danger); background: rgba(255,107,107,.08); }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 7px; }
+    pre { background: var(--code); border: 1px solid var(--line); border-radius: 16px; padding: 16px; overflow: auto; color: #d8e7ff; }
+    table { width: 100%; border-collapse: collapse; margin: 14px 0 24px; overflow: hidden; border-radius: 14px; }
+    th, td { border: 1px solid var(--line); padding: 12px 14px; vertical-align: top; }
+    th { background: rgba(101,214,255,.12); text-align: left; }
+    tr:nth-child(even) td { background: rgba(255,255,255,.025); }
+    ul, ol { padding-left: 22px; }
+    .status-ok { color: var(--accent-2); font-weight: 700; }
+    .status-risk { color: var(--warn); font-weight: 700; }
+    .status-bad { color: var(--danger); font-weight: 700; }
+    .toc { columns: 2; gap: 30px; }
+    .small { color: var(--muted); font-size: 14px; }
+    .footer { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="eyebrow">Product Requirements Document</div>
+      <h1>UOS TV — Migrasi Base OS dari Alpine ke Armbian/Debian</h1>
+      <p class="subtitle">
+        Dokumen PRD lengkap untuk membangun image UOS TV berbasis Armbian yang lebih stabil di perangkat Amlogic S905X seperti HG680P dan B860H, dengan fokus pada boot reliability, kemudahan driver, browser/UI, audio, dan CI/CD yang reproducible.
+      </p>
+      <div class="meta">
+        <span class="pill">Target hardware: HG680P / B860H / S905X</span>
+        <span class="pill">Base: Armbian / Debian</span>
+        <span class="pill">Kernel proven: 6.12.91-ophub</span>
+        <span class="pill">Boot: aml_autoscript → uEnv.txt → booti</span>
+        <span class="pill">Status: PRD awal</span>
+      </div>
+    </section>
+
+    <h2>Daftar Isi</h2>
+    <ol class="toc">
+      <li><a href="#summary">Ringkasan Eksekutif</a></li>
+      <li><a href="#background">Latar Belakang</a></li>
+      <li><a href="#goals">Tujuan dan Non-Tujuan</a></li>
+      <li><a href="#users">Target Pengguna dan Perangkat</a></li>
+      <li><a href="#scope">Ruang Lingkup Produk</a></li>
+      <li><a href="#architecture">Arsitektur Target</a></li>
+      <li><a href="#boot">Boot Flow</a></li>
+      <li><a href="#rootfs">RootFS dan Paket Sistem</a></li>
+      <li><a href="#services">Service Model</a></li>
+      <li><a href="#ui">UI dan Browser Runtime</a></li>
+      <li><a href="#audio">Audio, Input, Network</a></li>
+      <li><a href="#cicd">CI/CD dan Build Pipeline</a></li>
+      <li><a href="#ota">Update dan OTA</a></li>
+      <li><a href="#security">Security dan Hardening</a></li>
+      <li><a href="#acceptance">Acceptance Criteria</a></li>
+      <li><a href="#milestones">Milestone</a></li>
+      <li><a href="#risks">Risiko</a></li>
+      <li><a href="#openquestions">Pertanyaan Terbuka</a></li>
+    </ol>
+
+    <section id="summary">
+      <h2>1. Ringkasan Eksekutif</h2>
+      <div class="callout">
+        <strong>Rekomendasi utama:</strong> UOS TV sebaiknya memakai Armbian/Debian sebagai base OS untuk fase produk awal, bukan Alpine/custom rootfs. Ini akan mempercepat bootable image, mengurangi risiko kernel/module mismatch, mempermudah audio/browser/WiFi, dan menyederhanakan CI/CD.
+      </div>
+      <p>
+        Eksperimen sebelumnya menunjukkan bahwa image UOS berbasis Alpine dapat berjalan bila menggunakan kernel, initrd, dan DTB dari Armbian. Kernel mainline self-built 6.6 stuck di splash screen pada hardware, sedangkan Armbian 6.12.91-ophub sudah terbukti boot di HG680P/B860H melalui mekanisme stock Amlogic u-boot.
+      </p>
+      <p>
+        Karena target produk adalah TV OS yang butuh UI, browser runtime, audio, input remote, WiFi, dan OTA, Debian/Armbian memberikan fondasi lebih praktis: paket tersedia, dependency native lebih mudah, systemd siap pakai, dan driver stack lebih matang.
+      </p>
+    </section>
+
+    <section id="background">
+      <h2>2. Latar Belakang</h2>
+      <h3>2.1 Kondisi Saat Ini</h3>
+      <ul>
+        <li>Repo: <code>https://github.com/subekti404dev/uos-tv</code></li>
+        <li>Workflow CI: <code>.github/workflows/s905x-build.yml</code></li>
+        <li>Target image awal: Alpine rootfs + UOS services + kernel self-built + SD image.</li>
+        <li>Bootloader approach terbaru: Armbian-style, tanpa FIP, mengandalkan stock u-boot dan <code>aml_autoscript</code>.</li>
+      </ul>
+      <h3>2.2 Temuan Hardware</h3>
+      <table>
+        <thead><tr><th>Item</th><th>Temuan</th><th>Dampak</th></tr></thead>
+        <tbody>
+          <tr><td>Stock u-boot Amlogic</td><td>Menjalankan <code>aml_autoscript</code> dalam update mode.</td><td>Kita bisa boot SD tanpa menulis FIP/bootloader ke sektor awal.</td></tr>
+          <tr><td><code>s905_autoscript</code></td><td>Harus ARM 32-bit script image.</td><td><code>mkimage -A arm -O linux -T script</code> wajib.</td></tr>
+          <tr><td>Kernel self-built 6.6</td><td>Stuck di splash screen.</td><td>Belum layak menjadi default boot kernel.</td></tr>
+          <tr><td>Armbian kernel 6.12.91</td><td>Terbukti boot di HG680P/B860H.</td><td>Menjadi kandidat kernel default.</td></tr>
+          <tr><td>Alpine rootfs</td><td>Bisa mount dan boot lanjut bila kernel Armbian dipakai.</td><td>Rootfs custom bisa dipakai, tetapi banyak dependency sulit.</td></tr>
+        </tbody>
+      </table>
+      <h3>2.3 Masalah Alpine sebagai Base</h3>
+      <ul>
+        <li>Musl toolchain membuat dependency native seperti ALSA lebih sulit.</li>
+        <li>Browser runtime seperti WPE WebKit/Cog/Chromium lebih rumit dibanding Debian.</li>
+        <li>Kernel module compatibility harus dijaga manual.</li>
+        <li>Custom supervision membuat boot loop mudah terjadi bila binary/service hilang.</li>
+      </ul>
+    </section>
+
+    <section id="goals">
+      <h2>3. Tujuan dan Non-Tujuan</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Tujuan</h3>
+          <ul>
+            <li>Menghasilkan SD card image UOS TV yang bootable dan repeatable melalui GitHub Actions.</li>
+            <li>Memakai Armbian/Debian rootfs sebagai base utama.</li>
+            <li>Mempertahankan boot flow yang sudah proven: stock u-boot → <code>aml_autoscript</code> → <code>uEnv.txt</code> → kernel.</li>
+            <li>Menyediakan UI TV shell yang auto-start.</li>
+            <li>Mendukung network, WiFi, audio, input remote/keyboard, logging, dan recovery dasar.</li>
+            <li>Menghasilkan artifact <code>.img</code> yang kompatibel Balena Etcher.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Non-Tujuan Fase Awal</h3>
+          <ul>
+            <li>Membangun kernel sendiri sebagai default.</li>
+            <li>Mengganti stock Android/u-boot internal eMMC.</li>
+            <li>Full secure boot chain.</li>
+            <li>OTA delta kompleks seperti casync/RAUC penuh.</li>
+            <li>Optimasi ukuran image ekstrem.</li>
+            <li>Support semua model Amlogic di luar S905X.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="users">
+      <h2>4. Target Pengguna dan Perangkat</h2>
+      <h3>4.1 Primary User</h3>
+      <ul>
+        <li>Developer/maintainer yang membangun image OS untuk STB bekas.</li>
+        <li>Tester hardware yang burn SD card dan menjalankan <code>reboot update</code>.</li>
+        <li>Pengguna akhir yang memakai STB sebagai TV dashboard/media shell ringan.</li>
+      </ul>
+      <h3>4.2 Target Hardware</h3>
+      <table>
+        <thead><tr><th>Model</th><th>SoC</th><th>DTB Default</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>HG680P</td><td>Amlogic S905X</td><td><code>meson-gxl-s905x-p212.dtb</code></td><td class="status-ok">Proven via Armbian</td></tr>
+          <tr><td>B860H</td><td>Amlogic S905X</td><td><code>meson-gxl-s905x-b860h.dtb</code> atau fallback p212</td><td class="status-risk">Perlu test varian</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="scope">
+      <h2>5. Ruang Lingkup Produk</h2>
+      <h3>5.1 MVP</h3>
+      <ol>
+        <li>Image bootable dari SD card.</li>
+        <li>Armbian/Debian rootfs minimal.</li>
+        <li>Auto-login atau auto-start UI shell.</li>
+        <li>Network DHCP aktif.</li>
+        <li>WiFi firmware dan NetworkManager tersedia.</li>
+        <li>Audio ALSA/PulseAudio/PipeWire basic output.</li>
+        <li>Input remote/keyboard via evdev.</li>
+        <li>Logging systemd journal persist.</li>
+        <li>Build image via GitHub Actions.</li>
+      </ol>
+      <h3>5.2 Setelah MVP</h3>
+      <ul>
+        <li>OTA update signed.</li>
+        <li>Web UI settings untuk WiFi, display, audio.</li>
+        <li>Hardware acceleration investigation.</li>
+        <li>Read-only rootfs mode dengan overlay writable.</li>
+        <li>Factory reset mechanism.</li>
+      </ul>
+    </section>
+
+    <section id="architecture">
+      <h2>6. Arsitektur Target</h2>
+      <pre>┌──────────────────────────────────────────────────────────────┐
+│                      UOS TV Image                             │
+├──────────────────────────────────────────────────────────────┤
+│ Partition 1: FAT32 BOOT                                      │
+│  - aml_autoscript / s905_autoscript / emmc_autoscript         │
+│  - uEnv.txt                                                   │
+│  - zImage or vmlinuz from Armbian/ophub                       │
+│  - uInitrd from Armbian/ophub                                 │
+│  - dtb/amlogic/*.dtb                                          │
+├──────────────────────────────────────────────────────────────┤
+│ Partition 2: ext4 ROOTFS                                      │
+│  - Armbian/Debian base                                        │
+│  - systemd                                                    │
+│  - NetworkManager                                             │
+│  - ALSA/PipeWire/PulseAudio optional                          │
+│  - UOS services                                               │
+│  - UI runtime: Cog/WPE, Chromium, or lightweight shell         │
+└──────────────────────────────────────────────────────────────┘</pre>
+
+      <h3>6.1 Prinsip Arsitektur</h3>
+      <ul>
+        <li><strong>Boot proven first:</strong> kernel dan DTB dari Armbian menjadi default sampai kernel custom terbukti.</li>
+        <li><strong>Systemd native:</strong> service UOS dibuat sebagai systemd units.</li>
+        <li><strong>Language-agnostic:</strong> Rust tetap boleh, tetapi service boleh Go/Python/Node/C sesuai dependency.</li>
+        <li><strong>Hardware compatibility over purity:</strong> stabil di HG680P/B860H lebih penting daripada OS from-scratch.</li>
+        <li><strong>CI reproducible:</strong> semua modifikasi rootfs dilakukan scriptable di GitHub Actions.</li>
+      </ul>
+    </section>
+
+    <section id="boot">
+      <h2>7. Boot Flow</h2>
+      <h3>7.1 Boot Flow Target</h3>
+      <pre>Android reboot update
+  ↓
+Stock Amlogic u-boot update mode
+  ↓
+FAT32: aml_autoscript
+  ↓
+FAT32: s905_autoscript
+  ↓
+Fallback uEnv.txt (tanpa u-boot.ext)
+  ↓
+fatload zImage/vmlinuz + uInitrd + DTB
+  ↓
+booti
+  ↓
+Armbian/Debian userspace
+  ↓
+systemd target
+  ↓
+UOS TV shell</pre>
+      <h3>7.2 Ketentuan Boot Partition</h3>
+      <ul>
+        <li>Sector 0 berisi MBR.</li>
+        <li>Sector 1–4095 dikosongkan untuk menghindari FIP/mainline u-boot conflict.</li>
+        <li>Partition 1 FAT32 dimulai di LBA 4096.</li>
+        <li>Tidak boleh ada <code>u-boot.ext</code> di boot partition untuk HG680P/B860H awal, karena sebelumnya menyebabkan chainload mainline u-boot gagal.</li>
+      </ul>
+      <h3>7.3 Contoh <code>uEnv.txt</code></h3>
+      <pre>LINUX=/zImage
+INITRD=/uInitrd
+FDT=/dtb/amlogic/meson-gxl-s905x-p212.dtb
+APPEND=root=/dev/mmcblk1p2 rootwait rw rootfstype=ext4 console=ttyAML0,115200n8 console=tty0 no_console_suspend consoleblank=0 net.ifnames=0</pre>
+      <div class="warning callout">
+        <strong>Catatan:</strong> <code>root=/dev/mmcblk1p2</code> dipakai karena flow sebelumnya memakai MBR disk signature 0x00000000. Di fase berikutnya sebaiknya beralih ke UUID/PARTUUID yang stabil bila memungkinkan.
+      </div>
+    </section>
+
+    <section id="rootfs">
+      <h2>8. RootFS dan Paket Sistem</h2>
+      <h3>8.1 Base RootFS</h3>
+      <p>Base yang direkomendasikan:</p>
+      <ul>
+        <li>Armbian minimal/server image untuk S905X dari ophub/amlogic-s9xxx-armbian, atau</li>
+        <li>Debian arm64 rootfs + kernel/boot files dari ophub.</li>
+      </ul>
+      <h3>8.2 Paket Minimum</h3>
+      <table>
+        <thead><tr><th>Kategori</th><th>Paket</th><th>Tujuan</th></tr></thead>
+        <tbody>
+          <tr><td>System</td><td><code>systemd</code>, <code>udev</code>, <code>dbus</code>, <code>ca-certificates</code></td><td>Boot, device management, IPC.</td></tr>
+          <tr><td>Network</td><td><code>network-manager</code>, <code>wireless-regdb</code>, <code>wpasupplicant</code>, <code>iw</code></td><td>Ethernet/WiFi management.</td></tr>
+          <tr><td>Audio</td><td><code>alsa-utils</code>, <code>libasound2</code>, optional <code>pipewire</code>/<code>pulseaudio</code></td><td>Audio output dan volume control.</td></tr>
+          <tr><td>UI Browser</td><td><code>cog</code>/<code>wpewebkit</code> atau <code>chromium</code></td><td>Menjalankan Luna/UOS web shell.</td></tr>
+          <tr><td>Debug</td><td><code>openssh-server</code>, <code>curl</code>, <code>jq</code>, <code>htop</code>, <code>strace</code></td><td>Development dan troubleshooting.</td></tr>
+          <tr><td>Firmware</td><td><code>firmware-linux</code>, Realtek firmware tambahan</td><td>WiFi/Bluetooth compatibility.</td></tr>
+        </tbody>
+      </table>
+      <h3>8.3 Filesystem Layout</h3>
+      <pre>/boot                  FAT32 partition mounted optional
+/usr/bin/uos-*         UOS binaries/scripts
+/usr/share/uos         UI assets, configs, service manifests
+/etc/uos               Runtime config
+/var/lib/uos           Persistent app state
+/var/log/journal       Persistent systemd logs
+/etc/systemd/system    UOS service units</pre>
+    </section>
+
+    <section id="services">
+      <h2>9. Service Model</h2>
+      <h3>9.1 Rekomendasi</h3>
+      <p>
+        Gunakan systemd sebagai supervisor utama. Service UOS yang saat ini berada di bawah <code>monitord</code> bisa dipetakan menjadi systemd units. <code>monitord</code> dapat dipertahankan sebagai observability/orchestration layer, tetapi tidak menjadi satu-satunya critical supervisor pada MVP.
+      </p>
+      <h3>9.2 Mapping Service</h3>
+      <table>
+        <thead><tr><th>Service</th><th>Peran</th><th>Implementasi Awal</th><th>Systemd Policy</th></tr></thead>
+        <tbody>
+          <tr><td><code>stardustd</code></td><td>Message bus</td><td>Rust existing</td><td>Restart always</td></tr>
+          <tr><td><code>netmd</code></td><td>Network state wrapper</td><td>Rust/Go wrapper over NetworkManager</td><td>Restart on-failure</td></tr>
+          <tr><td><code>wifid</code></td><td>WiFi control API</td><td>May wrap nmcli/dbus</td><td>Restart on-failure</td></tr>
+          <tr><td><code>audiod</code></td><td>Volume/audio route</td><td>Rust with ALSA or Python wrapper</td><td>Restart on-failure</td></tr>
+          <tr><td><code>inputd</code></td><td>Remote/input events</td><td>Rust evdev or Python evdev</td><td>Restart on-failure</td></tr>
+          <tr><td><code>lumind</code></td><td>UI launcher</td><td>Shell/systemd unit launching browser</td><td>Restart always</td></tr>
+          <tr><td><code>cog/chromium</code></td><td>Browser runtime</td><td>Package-managed if possible</td><td>Restart always with backoff</td></tr>
+        </tbody>
+      </table>
+      <h3>9.3 Contoh Unit</h3>
+      <pre>[Unit]
+Description=UOS TV Shell
+After=network-online.target stardustd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=uos
+Environment=HOME=/home/uos
+ExecStart=/usr/bin/uos-shell-launcher
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target</pre>
+    </section>
+
+    <section id="ui">
+      <h2>10. UI dan Browser Runtime</h2>
+      <h3>10.1 Pilihan Runtime</h3>
+      <table>
+        <thead><tr><th>Opsi</th><th>Kelebihan</th><th>Kekurangan</th><th>Rekomendasi</th></tr></thead>
+        <tbody>
+          <tr><td>Cog/WPE WebKit</td><td>Ringan, embedded-oriented, cocok TV shell</td><td>Paket/DRM backend bisa tricky</td><td class="status-ok">Pilihan utama bila paket tersedia</td></tr>
+          <tr><td>Chromium kiosk</td><td>Paling kompatibel web modern</td><td>Berat, GPU accel belum tentu optimal</td><td class="status-risk">Fallback pragmatis</td></tr>
+          <tr><td>Native Qt/GTK</td><td>Kontrol tinggi</td><td>Butuh rewrite UI</td><td class="status-risk">Fase lanjut</td></tr>
+          <tr><td>TUI/Framebuffer custom</td><td>Sangat ringan</td><td>Bukan pengalaman TV modern</td><td class="status-bad">Bukan prioritas</td></tr>
+        </tbody>
+      </table>
+      <h3>10.2 Target UX MVP</h3>
+      <ul>
+        <li>Boot langsung masuk home screen.</li>
+        <li>Menampilkan status waktu, network, WiFi, dan basic apps.</li>
+        <li>Navigasi remote/keyboard arrow/enter/back.</li>
+        <li>Settings minimum: WiFi, audio volume, reboot/shutdown, about.</li>
+        <li>Fallback screen bila browser gagal start.</li>
+      </ul>
+    </section>
+
+    <section id="audio">
+      <h2>11. Audio, Input, Network</h2>
+      <h3>11.1 Audio</h3>
+      <p>Dengan Armbian/Debian, <code>audiod</code> dapat memakai ALSA secara native tanpa workaround musl.</p>
+      <pre>apt-get install -y alsa-utils libasound2 libasound2-dev
+aplay -l
+amixer scontrols</pre>
+      <h3>11.2 Input</h3>
+      <ul>
+        <li>Gunakan evdev untuk remote IR/keyboard.</li>
+        <li>Mapping key distandarkan ke event internal: up/down/left/right/ok/back/home/menu.</li>
+        <li>Jika IR receiver butuh config, gunakan <code>ir-keytable</code>.</li>
+      </ul>
+      <h3>11.3 Network/WiFi</h3>
+      <ul>
+        <li>NetworkManager menjadi source of truth.</li>
+        <li><code>wifid</code> hanya expose API sederhana ke UI.</li>
+        <li>Firmware Realtek tetap disediakan sebagai overlay bila paket Debian tidak cukup.</li>
+      </ul>
+    </section>
+
+    <section id="cicd">
+      <h2>12. CI/CD dan Build Pipeline</h2>
+      <h3>12.1 Pipeline Target</h3>
+      <pre>GitHub Actions
+  ↓
+Checkout repo
+  ↓
+Build UOS apps/services
+  ↓
+Download/prepare Armbian base image or rootfs
+  ↓
+Mount image partitions
+  ↓
+Inject boot files, uEnv.txt, configs
+  ↓
+Customize rootfs with chroot/systemd-nspawn/qemu-user-static
+  ↓
+Install packages + UOS services
+  ↓
+Clean logs/machine-id/cache
+  ↓
+Unmount + fsck
+  ↓
+Upload .img artifact</pre>
+      <h3>12.2 Dua Model Build</h3>
+      <div class="grid">
+        <div class="card">
+          <h3>Model A — Modify Existing Armbian Image</h3>
+          <p>Download image Armbian yang sudah proven, mount, inject UOS.</p>
+          <p><strong>Kelebihan:</strong> paling cepat bootable.</p>
+          <p><strong>Kekurangan:</strong> image lebih besar, kontrol base lebih rendah.</p>
+        </div>
+        <div class="card">
+          <h3>Model B — Build RootFS Debian Minimal</h3>
+          <p>Debootstrap rootfs arm64, lalu copy kernel/boot dari ophub.</p>
+          <p><strong>Kelebihan:</strong> lebih bersih dan reproducible.</p>
+          <p><strong>Kekurangan:</strong> butuh setup chroot lebih banyak.</p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>Keputusan implementasi:</strong> gunakan <strong>Model A — Modify Existing Armbian Image</strong> terlebih dahulu. Prioritas awal adalah image harus boot di hardware nyata dan berhasil load browser/UI shell. Setelah boot + browser stabil, baru lakukan cleanup/minimization dengan menghapus file, paket, service, kernel artifact, dan dokumentasi Armbian yang tidak diperlukan.
+      </div>
+
+      <h4>12.2.1 Strategi Model A Bertahap</h4>
+      <table>
+        <thead><tr><th>Fase</th><th>Fokus</th><th>Yang Dilakukan</th><th>Yang Belum Dilakukan</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Fase A1 — Boot First</td>
+            <td>Validasi boot hardware.</td>
+            <td>Download image Armbian proven, inject UOS minimal, pertahankan kernel/DTB/initrd/modules asli Armbian.</td>
+            <td>Belum hapus paket/file besar; belum optimasi ukuran.</td>
+          </tr>
+          <tr>
+            <td>Fase A2 — Browser First</td>
+            <td>UI shell muncul otomatis.</td>
+            <td>Install/aktifkan Cog/WPE atau Chromium kiosk, copy UI assets, buat systemd launcher.</td>
+            <td>Belum hardening penuh; browser runtime boleh masih besar.</td>
+          </tr>
+          <tr>
+            <td>Fase A3 — Hardware Basics</td>
+            <td>Input, network, WiFi, audio.</td>
+            <td>Test remote/keyboard, NetworkManager, ALSA/PipeWire, firmware tambahan.</td>
+            <td>Belum remove debug tools yang masih dibutuhkan troubleshooting.</td>
+          </tr>
+          <tr>
+            <td>Fase A4 — Cleanup/Minimize</td>
+            <td>Kecilkan image setelah stabil.</td>
+            <td>Remove package/file/service yang tidak perlu, clean apt cache/logs/docs, disable Armbian first-run extras.</td>
+            <td>Tidak mengubah boot chain yang sudah proven kecuali ada alasan kuat.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4>12.2.2 Cleanup Setelah Browser Berhasil</h4>
+      <p>Cleanup hanya dilakukan setelah acceptance berikut terpenuhi: image boot di HG680P/B860H, systemd mencapai multi-user target, browser/UI tampil otomatis, dan input dasar berfungsi.</p>
+      <ul>
+        <li>Hapus apt cache: <code>/var/cache/apt/archives/*.deb</code>.</li>
+        <li>Hapus log build dan journal lama: <code>/var/log/*</code> dengan pengecualian struktur direktori yang dibutuhkan.</li>
+        <li>Reset machine identity: <code>/etc/machine-id</code> dikosongkan untuk regenerate saat first boot.</li>
+        <li>Hapus dokumentasi/manpage/locales yang tidak dibutuhkan bila ukuran image menjadi concern.</li>
+        <li>Disable service Armbian yang tidak relevan, misalnya first-run wizard bila tidak dipakai.</li>
+        <li>Hapus package development: compiler, headers, debug tools berat — kecuali untuk image debug.</li>
+        <li>Pertahankan kernel, initrd, DTB, firmware, dan modules yang sudah terbukti boot sampai ada pengganti yang proven.</li>
+      </ul>
+      <div class="warning callout">
+        <strong>Guardrail:</strong> cleanup tidak boleh dilakukan sebelum boot + browser proven. Jika cleanup menyebabkan regresi, workflow harus bisa build varian <code>debug-full</code> yang masih berisi tools lengkap untuk troubleshooting.
+      </div>
+
+      <h3>12.3 Cache Strategy CI/CD</h3>
+      <div class="warning callout">
+        <strong>Requirement penting:</strong> workflow tidak boleh rebuild/download ulang komponen besar bila input komponen tersebut tidak berubah. Cache harus dipisah per domain agar perubahan UI/service tidak membatalkan cache kernel, Armbian base, rootfs package, atau toolchain.
+      </div>
+      <h4>12.3.1 Prinsip Cache</h4>
+      <ul>
+        <li><strong>Cache key harus berbasis input relevan, bukan seluruh repo.</strong> Contoh: cache kernel hanya berubah bila versi kernel, URL kernel, patch kernel, atau config kernel berubah.</li>
+        <li><strong>Pisahkan cache mahal dan cache cepat.</strong> Armbian base image, kernel/DTB/initrd, apt package cache, Rust/Go/Node dependencies, dan browser runtime harus punya key terpisah.</li>
+        <li><strong>Gunakan restore-key fallback.</strong> Jika exact key miss, workflow boleh restore cache versi dekat lalu hanya update delta.</li>
+        <li><strong>Jangan cache output final image sebagai dependency utama.</strong> Image final boleh artifact, tapi cache sebaiknya menyimpan base/rootfs layer yang reusable.</li>
+        <li><strong>Selalu ada step prepare/normalize setelah restore cache.</strong> Jika struktur cache lama berubah, step ini memperbaiki symlink/nama file tanpa download ulang.</li>
+        <li><strong>Cache invalidation harus eksplisit.</strong> Parameter <code>nocache=true</code> hanya dipakai saat benar-benar perlu, bukan default.</li>
+      </ul>
+
+      <h4>12.3.2 Cache Domain yang Wajib</h4>
+      <table>
+        <thead><tr><th>Cache Domain</th><th>Isi</th><th>Key Input</th><th>Harus Invalid Bila</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Armbian base image</td>
+            <td>Downloaded/extracted Armbian image atau rootfs base.</td>
+            <td><code>armbian-base-${ARMBIAN_IMAGE_VERSION}-${IMAGE_SHA256}</code></td>
+            <td>Versi image/URL/checksum berubah.</td>
+          </tr>
+          <tr>
+            <td>Ophub kernel bundle</td>
+            <td><code>zImage/vmlinuz</code>, <code>uInitrd</code>, <code>dtb/amlogic/*.dtb</code>, optional modules.</td>
+            <td><code>ophub-kernel-${OPHUB_KERNEL_VERSION}-${KERNEL_ASSET_SHA256}-vN</code></td>
+            <td>Versi kernel, asset checksum, atau struktur prepare berubah.</td>
+          </tr>
+          <tr>
+            <td>Apt package cache</td>
+            <td><code>/var/cache/apt/archives</code> atau local apt proxy cache.</td>
+            <td><code>apt-${DEBIAN_CODENAME}-${hash(package-list.txt)}</code></td>
+            <td>Codename atau daftar paket berubah.</td>
+          </tr>
+          <tr>
+            <td>Rust build cache</td>
+            <td>Cargo registry, git deps, target incremental per target triple.</td>
+            <td><code>rust-${target}-${hash(Cargo.lock)}-${hash(relevant Cargo.toml)}</code></td>
+            <td><code>Cargo.lock</code> atau crate terkait berubah.</td>
+          </tr>
+          <tr>
+            <td>Node/UI cache</td>
+            <td><code>node_modules</code> atau package manager store.</td>
+            <td><code>node-${hash(package-lock/pnpm-lock/yarn.lock)}</code></td>
+            <td>Lockfile UI berubah.</td>
+          </tr>
+          <tr>
+            <td>Browser runtime cache</td>
+            <td>Prebuilt Cog/WPE/Chromium package bila tidak dari apt repo biasa.</td>
+            <td><code>browser-${runtime}-${version}-${sha256}</code></td>
+            <td>Runtime/version berubah.</td>
+          </tr>
+          <tr>
+            <td>WiFi firmware/driver overlay</td>
+            <td>Firmware blobs dan optional out-of-tree module artifact.</td>
+            <td><code>wifi-${kernel_version}-${hash(scripts/build-s905x-wifi.sh)}-${hash(firmware-manifest)}</code></td>
+            <td>Kernel ABI, firmware manifest, atau build script berubah.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4>12.3.3 Contoh Cache Key yang Direkomendasikan</h4>
+      <pre>env:
+  ARMBIAN_IMAGE_VERSION: "26.05.0-s905x-b860h-6.12.91"
+  OPHUB_KERNEL_VERSION: "6.12.91"
+  DEBIAN_CODENAME: "trixie"
+
+# Kernel cache
+key: ophub-kernel-${{ env.OPHUB_KERNEL_VERSION }}-${{ hashFiles('configs/kernel/ophub-kernel.lock') }}-v2
+restore-keys: |
+  ophub-kernel-${{ env.OPHUB_KERNEL_VERSION }}-
+  ophub-kernel-
+
+# Apt/rootfs package cache
+key: apt-${{ env.DEBIAN_CODENAME }}-${{ hashFiles('configs/armbian/packages.txt') }}
+restore-keys: |
+  apt-${{ env.DEBIAN_CODENAME }}-
+
+# Rust cache
+key: rust-aarch64-${{ hashFiles('Cargo.lock', 'crates/**/Cargo.toml') }}</pre>
+
+      <h4>12.3.4 Cache Hit Observability</h4>
+      <p>Setiap workflow run wajib menampilkan ringkasan cache di log dan artifact metadata:</p>
+      <pre>Cache summary:
+- armbian-base: hit/miss, key=...
+- ophub-kernel: hit/miss, key=...
+- apt-packages: hit/miss, key=...
+- rust: hit/miss, key=...
+- ui: hit/miss, key=...
+- wifi: hit/miss, key=...</pre>
+      <p>
+        File <code>manifest.json</code> artifact harus mencatat cache key, source URL, SHA256, versi kernel, versi base image, dan commit SHA agar build bisa diaudit.
+      </p>
+
+      <h4>12.3.5 Acceptance Criteria Cache</h4>
+      <ul>
+        <li>Jika hanya file UI berubah, cache Armbian base, kernel, apt package, dan WiFi tidak boleh invalid.</li>
+        <li>Jika hanya service Rust tertentu berubah, cache Armbian base dan kernel tetap hit; Rust dependency cache tetap hit kecuali <code>Cargo.lock</code> berubah.</li>
+        <li>Jika hanya <code>uEnv.txt</code> atau boot script berubah, kernel bundle tidak didownload ulang.</li>
+        <li>Jika build rerun di commit yang sama dengan <code>nocache=false</code>, semua cache domain besar harus hit.</li>
+        <li>Waktu build incremental target MVP maksimal 15–25 menit, bukan rebuild 60–120 menit.</li>
+        <li>Perubahan pada script prepare cache harus memakai suffix versi seperti <code>-v2</code>, bukan mengandalkan cache lama yang strukturnya incompatible.</li>
+      </ul>
+
+      <h3>12.4 Artifact</h3>
+      <ul>
+        <li><code>uos-tv-armbian-s905x.img</code></li>
+        <li>Optional compressed: <code>uos-tv-armbian-s905x.img.xz</code></li>
+        <li>Build metadata: <code>manifest.json</code></li>
+        <li>Checksums: <code>SHA256SUMS</code></li>
+        <li>Cache summary: <code>cache-summary.txt</code></li>
+      </ul>
+    </section>
+
+    <section id="ota">
+      <h2>13. Update dan OTA</h2>
+      <h3>13.1 MVP Update</h3>
+      <ul>
+        <li>Manual image replacement via SD card.</li>
+        <li>App/service update via package tarball atau git release artifact.</li>
+        <li>Rootfs tetap writable untuk development.</li>
+      </ul>
+      <h3>13.2 Fase Lanjut</h3>
+      <ul>
+        <li>A/B rootfs partition atau RAUC.</li>
+        <li>Signed update manifest.</li>
+        <li>Rollback otomatis bila boot gagal.</li>
+        <li>Delta update untuk menghemat bandwidth.</li>
+      </ul>
+    </section>
+
+    <section id="security">
+      <h2>14. Security dan Hardening</h2>
+      <h3>14.1 MVP Security</h3>
+      <ul>
+        <li>Disable password root default atau paksa ganti password saat first boot.</li>
+        <li>SSH optional: enabled hanya development image, disabled production image.</li>
+        <li>Service berjalan sebagai user non-root bila memungkinkan.</li>
+        <li>Firewall basic via nftables/ufw bila network exposure ada.</li>
+        <li>Update channel ditandatangani untuk fase OTA.</li>
+      </ul>
+      <h3>14.2 Production Hardening</h3>
+      <ul>
+        <li>Read-only system partition.</li>
+        <li>Writable overlay untuk config/logs.</li>
+        <li>Least privilege systemd sandboxing: <code>NoNewPrivileges</code>, <code>ProtectSystem</code>, <code>PrivateTmp</code>.</li>
+        <li>Audit dependency browser/runtime.</li>
+      </ul>
+    </section>
+
+    <section id="acceptance">
+      <h2>15. Acceptance Criteria</h2>
+      <table>
+        <thead><tr><th>Area</th><th>Kriteria</th><th>Metode Verifikasi</th></tr></thead>
+        <tbody>
+          <tr><td>Boot</td><td>Image boot sampai userspace di HG680P via <code>reboot update</code>.</td><td>Test hardware.</td></tr>
+          <tr><td>Cold boot</td><td>Setelah pertama update mode, perangkat tetap bisa boot SD saat power cycle.</td><td>Power cycle test.</td></tr>
+          <tr><td>UI</td><td>Home screen tampil otomatis tanpa login manual.</td><td>Visual test HDMI.</td></tr>
+          <tr><td>Input</td><td>Keyboard/remote bisa navigasi UI.</td><td>Evdev/UI test.</td></tr>
+          <tr><td>Network</td><td>Ethernet DHCP mendapat IP.</td><td><code>nmcli</code>, ping.</td></tr>
+          <tr><td>WiFi</td><td>WiFi scan dan connect ke WPA2 AP.</td><td>UI atau nmcli.</td></tr>
+          <tr><td>Audio</td><td>Audio test tone keluar via HDMI/analog sesuai hardware.</td><td><code>speaker-test</code>.</td></tr>
+          <tr><td>CI</td><td>GitHub Actions sukses upload image artifact.</td><td>Workflow green.</td></tr>
+          <tr><td>CI Cache</td><td>Rerun commit yang sama dengan <code>nocache=false</code> menghasilkan cache hit untuk Armbian base, ophub kernel, apt package, dan dependency cache.</td><td>Log cache summary + <code>cache-summary.txt</code>.</td></tr>
+          <tr><td>Incremental Build</td><td>Perubahan UI/service kecil tidak memicu download/build ulang kernel/base image.</td><td>Bandingkan cache key dan durasi workflow.</td></tr>
+          <tr><td>Recovery</td><td>Service crash tidak menyebabkan reboot loop global.</td><td>Kill service, observe restart.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="milestones">
+      <h2>16. Milestone</h2>
+      <h3>Milestone 0 — Decision & PRD</h3>
+      <ul>
+        <li class="status-ok">PRD Armbian-base disetujui.</li>
+        <li>Pilih Model A atau B untuk implementasi pertama.</li>
+      </ul>
+      <h3>Milestone 1 — Bootable Armbian-base Image</h3>
+      <ul>
+        <li>CI menghasilkan image Armbian-base.</li>
+        <li>Boot partition mengikuti Armbian-style proven.</li>
+        <li>Rootfs Armbian boot sampai shell/systemd.</li>
+      </ul>
+      <h3>Milestone 2 — UOS Services Integration</h3>
+      <ul>
+        <li>Install UOS binaries/scripts ke rootfs.</li>
+        <li>Systemd units aktif.</li>
+        <li>Tidak ada bootloop bila service non-critical gagal.</li>
+      </ul>
+      <h3>Milestone 3 — TV Shell MVP</h3>
+      <ul>
+        <li>Browser/UI auto-start.</li>
+        <li>Input navigation berfungsi.</li>
+        <li>Network/audio basic berfungsi.</li>
+      </ul>
+      <h3>Milestone 4 — Stabilization</h3>
+      <ul>
+        <li>Cold boot, reboot, shutdown reliable.</li>
+        <li>WiFi dan audio tested di HG680P/B860H.</li>
+        <li>Logs dan diagnostics siap.</li>
+      </ul>
+      <h3>Milestone 5 — OTA/Production Prep</h3>
+      <ul>
+        <li>Update mechanism signed.</li>
+        <li>Security hardening dasar.</li>
+        <li>Release artifact versioned.</li>
+      </ul>
+    </section>
+
+    <section id="risks">
+      <h2>17. Risiko dan Mitigasi</h2>
+      <table>
+        <thead><tr><th>Risiko</th><th>Dampak</th><th>Mitigasi</th></tr></thead>
+        <tbody>
+          <tr><td>Varian hardware berbeda</td><td>DTB/WiFi/audio tidak sama.</td><td>Board profile per model, fallback p212, hardware matrix.</td></tr>
+          <tr><td>Browser runtime berat</td><td>UI lambat atau memory pressure.</td><td>Mulai dari Cog/WPE; fallback Chromium; optimasi UI.</td></tr>
+          <tr><td>Armbian upstream berubah</td><td>Build tidak reproducible.</td><td>Pin versi kernel/image, checksum artifact.</td></tr>
+          <tr><td>Systemd service crash loop</td><td>UI tidak stabil.</td><td>Backoff, non-critical policies, fallback screen.</td></tr>
+          <tr><td>OTA gagal</td><td>Device brick soft.</td><td>A/B rootfs atau recovery SD flow.</td></tr>
+          <tr><td>Licensing browser/codecs</td><td>Distribusi bermasalah.</td><td>Audit package license dan codec usage.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="openquestions">
+      <h2>18. Pertanyaan Terbuka</h2>
+      <ol>
+        <li>Apakah target produk membutuhkan browser penuh, atau cukup web shell ringan?</li>
+        <li>Apakah image production harus bisa boot dari eMMC, atau SD card cukup?</li>
+        <li>Apakah SSH development akan selalu tersedia?</li>
+        <li>Audio output utama HDMI, analog, atau keduanya?</li>
+        <li>Remote bawaan HG680P/B860H memakai mapping apa dan apakah butuh custom keytable?</li>
+        <li>Apakah UOS services tetap Rust, atau boleh sebagian diganti Go/Python/Node untuk speed development?</li>
+        <li>Apakah ukuran image menjadi constraint utama?</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>19. Rekomendasi Implementasi Pertama</h2>
+      <div class="callout">
+        <strong>Langkah paling pragmatis:</strong> buat CI baru atau mode baru di workflow existing bernama <code>armbian-base</code> yang memodifikasi image Armbian proven, bukan membangun Debian rootfs dari nol.
+      </div>
+      <ol>
+        <li>Download image Armbian S905X proven.</li>
+        <li>Mount partition boot dan rootfs di CI.</li>
+        <li>Pertahankan boot files/kernel/modules/DTB asli Armbian.</li>
+        <li>Copy UOS UI assets dan service binaries/scripts minimal.</li>
+        <li>Install systemd units untuk auto-start browser/UI shell.</li>
+        <li>Set hostname, user, auto-start target.</li>
+        <li>Build artifact <code>debug-full</code> terlebih dahulu tanpa cleanup agresif.</li>
+        <li>Test boot hardware sampai browser tampil.</li>
+        <li>Setelah proven, aktifkan tahap cleanup/minimize bertahap.</li>
+        <li>Unmount, fsck, upload image final.</li>
+      </ol>
+      <p class="small">
+        Pendekatan ini menjaga keunggulan utama: semua file boot/kernel/modules tetap berasal dari image Armbian yang sudah berhasil di hardware nyata. Cleanup dilakukan belakangan agar tidak menambah variabel saat debugging boot/browser.
+      </p>
+    </section>
+
+    <div class="footer">
+      <p>Dokumen dibuat untuk proyek UOS TV. Fokus: migrasi basis OS ke Armbian/Debian agar boot dan integrasi hardware lebih cepat stabil pada Amlogic S905X STB.</p>
+    </div>
+  </main>
+</body>
+</html>

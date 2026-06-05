@@ -1,0 +1,219 @@
+name: UOS TV Armbian Model A Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      board:
+        description: 'Target board image to use'
+        required: false
+        default: 'b860h'
+        type: choice
+        options:
+          - b860h
+          - s905x-generic
+      nocache:
+        description: 'Skip caches (force redownload/rebuild)'
+        required: false
+        default: false
+        type: boolean
+      cleanup_mode:
+        description: 'debug-full first, minimize after boot+browser proven'
+        required: false
+        default: 'debug-full'
+        type: choice
+        options:
+          - debug-full
+          - minimize
+  push:
+    branches: [armbian-base-model-a]
+    paths:
+      - '.github/workflows/armbian-model-a.yml'
+      - 'scripts/customize-armbian-model-a.sh'
+      - 'configs/armbian-model-a/**'
+      - 'configs/services.d/**'
+      - 'configs/*.yaml'
+      - 'luna/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Dockerfile.cross'
+
+jobs:
+  rust-cross:
+    name: Rust ARM64 Cross-Compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: armbian-model-a-rust-aarch64
+          cache-targets: true
+
+      - name: Build cross-compile Docker image
+        run: docker build -t uos-builder -f Dockerfile.cross .
+
+      - name: Cross-compile workspace
+        run: |
+          docker run --rm -v "$PWD:/work" uos-builder \
+            cargo build --release --target aarch64-unknown-linux-musl \
+            --workspace --exclude audiod
+          docker run --rm -v "$PWD:/work" uos-builder \
+            cargo build --release --target aarch64-unknown-linux-musl \
+            -p audiod --no-default-features
+
+      - name: Upload ARM64 binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-arm64-binaries-armbian-model-a
+          path: |
+            target/aarch64-unknown-linux-musl/release/inis
+            target/aarch64-unknown-linux-musl/release/monitord
+            target/aarch64-unknown-linux-musl/release/stardustd
+            target/aarch64-unknown-linux-musl/release/lunad
+            target/aarch64-unknown-linux-musl/release/lumind
+            target/aarch64-unknown-linux-musl/release/netmd
+            target/aarch64-unknown-linux-musl/release/wifid
+            target/aarch64-unknown-linux-musl/release/notifd
+            target/aarch64-unknown-linux-musl/release/otad
+            target/aarch64-unknown-linux-musl/release/pkgd
+            target/aarch64-unknown-linux-musl/release/logd
+            target/aarch64-unknown-linux-musl/release/dispald
+            target/aarch64-unknown-linux-musl/release/devmand
+            target/aarch64-unknown-linux-musl/release/powermand
+            target/aarch64-unknown-linux-musl/release/audiod
+            target/aarch64-unknown-linux-musl/release/inputd
+            target/aarch64-unknown-linux-musl/release/casync-rs
+            target/aarch64-unknown-linux-musl/release/rauc-rs
+            target/aarch64-unknown-linux-musl/release/update-verify
+          retention-days: 7
+
+  image:
+    name: Customize Armbian Image (Model A)
+    runs-on: ubuntu-latest
+    needs: rust-cross
+    timeout-minutes: 90
+    env:
+      BOARD: ${{ inputs.board || 'b860h' }}
+      NOCACHE: ${{ inputs.nocache || 'false' }}
+      CLEANUP_MODE: ${{ inputs.cleanup_mode || 'debug-full' }}
+      ARMBIAN_RELEASE_TAG: Armbian_resolute_arm64_server_2026.06
+      ARMBIAN_B860H_ASSET: Armbian_26.05.0_amlogic_s905x-b860h_resolute_6.12.91_server_2026.06.01.img.gz
+      ARMBIAN_GENERIC_ASSET: Armbian_26.05.0_amlogic_s905x_resolute_6.12.91_server_2026.06.01.img.gz
+      ARMBIAN_BASE_CACHE_VERSION: v1
+      PROJECT_DIR: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ARM64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-arm64-binaries-armbian-model-a
+          path: target/aarch64-unknown-linux-musl/release/
+
+      - name: Make binaries executable
+        run: chmod +x target/aarch64-unknown-linux-musl/release/*
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            curl gzip xz-utils jq qemu-user-static binfmt-support \
+            parted fdisk dosfstools e2fsprogs util-linux rsync
+
+      - name: Select Armbian asset
+        id: armbian
+        run: |
+          if [ "$BOARD" = "s905x-generic" ]; then
+            asset="$ARMBIAN_GENERIC_ASSET"
+          else
+            asset="$ARMBIAN_B860H_ASSET"
+          fi
+          url="https://github.com/ophub/amlogic-s9xxx-armbian/releases/download/${ARMBIAN_RELEASE_TAG}/${asset}"
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "cache_key=armbian-base-${asset}-${ARMBIAN_BASE_CACHE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Selected asset: $asset"
+
+      - name: Restore Armbian base cache
+        if: env.NOCACHE != 'true'
+        id: armbian-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/cache/armbian-base
+          key: ${{ steps.armbian.outputs.cache_key }}
+          restore-keys: |
+            armbian-base-${{ steps.armbian.outputs.asset }}-
+            armbian-base-
+
+      - name: Download Armbian base image
+        if: steps.armbian-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p build/cache/armbian-base
+          echo "Downloading ${{ steps.armbian.outputs.url }}"
+          curl -fL --retry 5 --retry-delay 5 \
+            "${{ steps.armbian.outputs.url }}" \
+            -o build/cache/armbian-base/armbian.img.gz
+          gzip -t build/cache/armbian-base/armbian.img.gz
+          sha256sum build/cache/armbian-base/armbian.img.gz | tee build/cache/armbian-base/SHA256SUMS
+
+      - name: Save Armbian base cache
+        if: env.NOCACHE != 'true' && steps.armbian-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/cache/armbian-base
+          key: ${{ steps.armbian.outputs.cache_key }}
+
+      - name: Prepare working image
+        run: |
+          mkdir -p build/armbian-model-a out
+          gzip -dc build/cache/armbian-base/armbian.img.gz > build/armbian-model-a/armbian-base.img
+          ls -lh build/armbian-model-a/armbian-base.img
+          fdisk -l build/armbian-model-a/armbian-base.img
+
+      - name: Customize Armbian image
+        env:
+          BIN_DIR: ${{ github.workspace }}/target/aarch64-unknown-linux-musl/release
+          PACKAGES_FILE: ${{ github.workspace }}/configs/armbian-model-a/packages.txt
+          IMAGE_SIZE_EXTRA_GB: "2"
+          INSTALL_PACKAGES: "true"
+          CLEANUP_MODE: ${{ env.CLEANUP_MODE }}
+        run: |
+          scripts/customize-armbian-model-a.sh \
+            build/armbian-model-a/armbian-base.img \
+            out/uos-tv-armbian-model-a-${BOARD}.img
+
+      - name: Write build metadata
+        run: |
+          IMG="out/uos-tv-armbian-model-a-${BOARD}.img"
+          sha256sum "$IMG" > out/SHA256SUMS
+          cat > out/cache-summary.txt <<EOF
+          armbian-base: ${{ steps.armbian-cache.outputs.cache-hit || 'false' }}
+          armbian-key: ${{ steps.armbian.outputs.cache_key }}
+          rust-cache: handled-by-Swatinem/rust-cache
+          cleanup-mode: ${CLEANUP_MODE}
+          EOF
+          jq -n \
+            --arg commit "$GITHUB_SHA" \
+            --arg board "$BOARD" \
+            --arg asset "${{ steps.armbian.outputs.asset }}" \
+            --arg url "${{ steps.armbian.outputs.url }}" \
+            --arg cache_key "${{ steps.armbian.outputs.cache_key }}" \
+            --arg cleanup_mode "$CLEANUP_MODE" \
+            --arg image "$(basename "$IMG")" \
+            --arg sha256 "$(cut -d ' ' -f1 out/SHA256SUMS)" \
+            '{commit:$commit, board:$board, armbian_asset:$asset, armbian_url:$url, armbian_cache_key:$cache_key, cleanup_mode:$cleanup_mode, image:$image, sha256:$sha256}' \
+            > out/manifest.json
+          ls -lh out/
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uos-tv-armbian-model-a-${{ env.BOARD }}
+          path: |
+            out/uos-tv-armbian-model-a-${{ env.BOARD }}.img
+            out/SHA256SUMS
+            out/manifest.json
+            out/cache-summary.txt
+          retention-days: 7
