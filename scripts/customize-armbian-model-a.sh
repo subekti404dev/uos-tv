@@ -128,55 +128,98 @@ if [[ -d "$PROJECT_DIR/luna" ]]; then
   sudo cp -r "$PROJECT_DIR/luna" "$ROOT_MNT/usr/share/uos/luna"
 fi
 
-# Browser launcher. Model A uses Xorg + openbox + Chromium first because it is
-# available from Debian repos and easier to debug than DRM-only embedded stacks.
-sudo tee "$ROOT_MNT/usr/bin/uos-browser" >/dev/null <<'EOF'
+# Browser launcher. Chromium-first with optimized flags for S905X.
+# Fallback to surf (WebKitGTK). Cog (WPE WebKit) preferred if prebuilt binary is present.
+sudo tee "$ROOT_MNT/usr/bin/uos-browser" >/dev/null <<'BROWSEREOF'
 #!/usr/bin/env bash
 set -euo pipefail
-URL="file:///usr/share/uos/luna/index.html"
-openbox >/tmp/openbox.log 2>&1 &
-sleep 1
-xset -dpms s off s noblank 2>/dev/null || true
-if command -v chromium >/dev/null 2>&1; then
-  exec chromium --no-sandbox --kiosk --disable-gpu --disable-dev-shm-usage "$URL"
-elif command -v chromium-browser >/dev/null 2>&1; then
-  exec chromium-browser --no-sandbox --kiosk --disable-gpu --disable-dev-shm-usage "$URL"
-elif command -v cog >/dev/null 2>&1; then
+URL="http://127.0.0.1:8080/index.html"
+
+if command -v cog >/dev/null 2>&1; then
   exec cog "$URL"
-else
-  echo "No browser runtime found. Install chromium or cog." >&2
-  while true; do sleep 3600; done
 fi
-EOF
+if command -v chromium >/dev/null 2>&1; then
+  exec chromium \
+    --no-sandbox \
+    --kiosk \
+    --disable-dev-shm-usage \
+    --force-device-scale-factor=1 \
+    --window-size=1920,1080 \
+    --disable-gpu \
+    --disable-software-rasterizer \
+    --disable-features=TranslateUI,VizDisplayCompositor \
+    --disable-extensions \
+    --disable-background-networking \
+    --disable-sync \
+    --disable-default-apps \
+    --no-first-run \
+    --noerrdialogs \
+    --disable-translate \
+    --disable-password-manager \
+    --disable-crash-reporter \
+    --disable-component-update \
+    --renderer-process-limit=2 \
+    --max_old_space_size=128 \
+    --js-flags="--max-old-space-size=128" \
+    "${URL}"
+fi
+if command -v surf >/dev/null 2>&1; then
+  exec surf "${URL}"
+fi
+echo "No browser runtime found." >&2
+while true; do sleep 3600; done
+BROWSEREOF
 sudo chmod 0755 "$ROOT_MNT/usr/bin/uos-browser"
 
-sudo tee "$ROOT_MNT/usr/bin/uos-shell-launcher" >/dev/null <<'EOF'
+# Shell launcher: start X with DPI override for TV readability.
+sudo tee "$ROOT_MNT/usr/bin/uos-shell-launcher" >/dev/null <<'LAUNCHEREOF'
 #!/usr/bin/env bash
 set -euo pipefail
 export HOME="${HOME:-/home/uos}"
 mkdir -p "$HOME"
 if command -v startx >/dev/null 2>&1; then
-  exec startx /usr/bin/uos-browser -- :0 -nocursor vt7
+  exec startx /usr/bin/uos-browser -- :0 -nocursor -dpi 160 vt7
 fi
 exec /usr/bin/uos-browser
-EOF
+LAUNCHEREOF
 sudo chmod 0755 "$ROOT_MNT/usr/bin/uos-shell-launcher"
+
+# Xresources — DPI for TV.
+sudo mkdir -p "$ROOT_MNT/root" "$ROOT_MNT/home/uos"
+printf 'Xft.dpi: 160\n' | sudo tee "$ROOT_MNT/root/.Xresources" "$ROOT_MNT/home/uos/.Xresources" >/dev/null 2>&1 || true
 
 # Dedicated user for UI and deterministic credentials for non-interactive boot.
 sudo chroot "$ROOT_MNT" /bin/bash -c "id -u uos >/dev/null 2>&1 || useradd -m -s /bin/bash -G audio,video,input,netdev,sudo uos" || true
 sudo chroot "$ROOT_MNT" /bin/bash -c "echo 'root:uosroot1234' | chpasswd; echo 'uos:uos1234' | chpasswd; chsh -s /bin/bash root; chsh -s /bin/bash uos" || true
 
+# X11 input config — use libinput for keyboard/mouse (fixes "No input driver specified").
+sudo mkdir -p "$ROOT_MNT/etc/X11/xorg.conf.d"
+sudo tee "$ROOT_MNT/etc/X11/xorg.conf.d/10-input.conf" >/dev/null <<'XINPEOF'
+Section "InputClass"
+    Identifier "Keyboard catchall"
+    MatchIsKeyboard "on"
+    Driver "libinput"
+    Option "XkbLayout" "us"
+EndSection
+
+Section "InputClass"
+    Identifier "Mouse catchall"
+    MatchIsPointer "on"
+    Driver "libinput"
+EndSection
+XINPEOF
+
 # Minimal systemd units. Keep existing Armbian services intact for debug-full.
-sudo tee "$ROOT_MNT/etc/systemd/system/uos-shell.service" >/dev/null <<'EOF'
+# uos-shell runs as root so Xorg can open vt7.
+sudo tee "$ROOT_MNT/etc/systemd/system/uos-shell.service" >/dev/null <<'SHELLUNIT'
 [Unit]
 Description=UOS TV Shell
-After=multi-user.target network-online.target
-Wants=network-online.target
+After=multi-user.target network-online.target luna-httpd.service
+Wants=network-online.target luna-httpd.service
 
 [Service]
 Type=simple
-User=uos
-Group=uos
+User=root
 Environment=HOME=/home/uos
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 ExecStart=/usr/bin/uos-shell-launcher
@@ -185,25 +228,109 @@ RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
-EOF
+SHELLUNIT
 
-sudo tee "$ROOT_MNT/etc/systemd/system/stardustd.service" >/dev/null <<'EOF'
+# stardustd with WebSocket bridge for Luna UI (ws://127.0.0.1:9090).
+sudo tee "$ROOT_MNT/etc/systemd/system/stardustd.service" >/dev/null <<'BUSUNIT'
 [Unit]
 Description=UOS Stardust Bus
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/stardustd
+ExecStart=/usr/bin/stardustd --ws-addr 127.0.0.1:9090
 Restart=on-failure
 RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
-EOF
+BUSUNIT
 
-sudo chroot "$ROOT_MNT" /bin/bash -c "systemctl enable stardustd.service uos-shell.service" || true
+# Luna HTTP server — serves UI assets so browser can use same-origin WebSocket.
+sudo tee "$ROOT_MNT/etc/systemd/system/luna-httpd.service" >/dev/null <<'HTTPUNIT'
+[Unit]
+Description=Luna HTTP Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m http.server 8080 --directory /usr/share/uos/luna
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+HTTPUNIT
+
+sudo chroot "$ROOT_MNT" /bin/bash -c "systemctl enable stardustd.service luna-httpd.service uos-shell.service" || true
+# Mask inputd — X11/libinput handles keyboard directly to avoid evdev grab conflicts.
+sudo chroot "$ROOT_MNT" /bin/bash -c "systemctl mask inputd.service 2>/dev/null || true" || true
 sudo chroot "$ROOT_MNT" /bin/bash -c "systemctl enable NetworkManager.service 2>/dev/null || true" || true
+# CSS TV-native polish: hide scrollbars, remove web-like cursors, glass cards.
+if [[ -f "$ROOT_MNT/usr/share/uos/luna/css/shell.css" ]]; then
+  sudo tee -a "$ROOT_MNT/usr/share/uos/luna/css/shell.css" >/dev/null <<'LUNACSS'
+
+/* === TV-Native Polish — CI injected === */
+::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+* {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+  outline: none !important;
+  cursor: none !important;
+}
+.card {
+  border-radius: var(--radius-lg) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+  background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01)) !important;
+  backdrop-filter: blur(10px) !important;
+  transform: scale(1) !important;
+}
+.card:focus, .card:hover {
+  border-color: rgba(247, 129, 102, 0.5) !important;
+  background: linear-gradient(135deg, rgba(247,129,102,0.1), rgba(247,129,102,0.03)) !important;
+  transform: scale(1.03) !important;
+  box-shadow: 0 0 30px rgba(247,129,102,0.15) !important;
+}
+.section-label {
+  font-size: 1rem !important;
+  letter-spacing: 3px !important;
+  padding-bottom: 8px !important;
+  border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+  margin-bottom: 20px !important;
+}
+.card-grid { gap: 20px !important; padding: 4px !important; }
+.card-icon { font-size: 2.5rem !important; margin-bottom: 12px !important; }
+.card-title { font-size: 1rem !important; font-weight: 700 !important; }
+.card-desc { font-size: 0.75rem !important; opacity: 0.6 !important; }
+#topbar {
+  background: linear-gradient(180deg, rgba(11,11,18,0.95), rgba(11,11,18,0.8)) !important;
+  backdrop-filter: blur(15px) !important;
+  border-bottom: 1px solid rgba(255,255,255,0.04) !important;
+}
+.footer { opacity: 0.3 !important; }
+LUNACSS
+fi
+
+# Inject RTL8189FS WiFi driver if built by CI.
+if [[ -f "$PROJECT_DIR/build/wifi/8189fs.ko" ]]; then
+  echo "Installing RTL8189FS WiFi driver..."
+  MODDIR="$ROOT_MNT/lib/modules/6.12.91-ophub/kernel/drivers/net/wireless"
+  sudo mkdir -p "$MODDIR"
+  sudo install -m 0644 "$PROJECT_DIR/build/wifi/8189fs.ko" "$MODDIR/8189fs.ko"
+  printf '8189fs\n' | sudo tee "$ROOT_MNT/etc/modules-load.d/rtl8189fs.conf" >/dev/null
+  sudo chroot "$ROOT_MNT" /bin/bash -c "depmod -a 6.12.91-ophub 2>/dev/null || depmod" || true
+fi
+
+# Inject Cog (WPE WebKit) if built by CI.
+if [[ -f "$PROJECT_DIR/build/cog/usr/bin/cog" ]]; then
+  echo "Installing Cog (WPE WebKit)..."
+  sudo install -m 0755 "$PROJECT_DIR/build/cog/usr/bin/cog" "$ROOT_MNT/usr/bin/cog"
+  if [[ -d "$PROJECT_DIR/build/cog/usr/lib" ]]; then
+    sudo cp -r "$PROJECT_DIR/build/cog/usr/lib/"* "$ROOT_MNT/usr/lib/" 2>/dev/null || true
+  fi
+  sudo ldconfig "$ROOT_MNT" 2>/dev/null || true
+fi
+
 # Disable Armbian interactive first-login / web setup wizard; UOS image must
 # boot straight into services/browser without asking for shell/user setup on
 # HDMI/serial or spawning the armbian-armbiansetup AP.

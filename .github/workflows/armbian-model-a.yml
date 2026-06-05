@@ -29,6 +29,7 @@ on:
     paths:
       - '.github/workflows/armbian-model-a.yml'
       - 'scripts/customize-armbian-model-a.sh'
+      - 'scripts/build-cog.sh'
       - 'configs/armbian-model-a/**'
       - 'configs/services.d/**'
       - 'configs/*.yaml'
@@ -93,10 +94,141 @@ jobs:
             target/aarch64-unknown-linux-musl/release/update-verify
           retention-days: 7
 
+  build-cog:
+    name: Build Cog (WPE WebKit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      COG_OUTPUT: build/cog
+      NOCACHE: ${{ inputs.nocache || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Cog build
+        if: env.NOCACHE != 'true'
+        id: cog-cache
+        uses: actions/cache@v4
+        with:
+          path: build/cog
+          key: cog-arm64-${{ hashFiles('scripts/build-cog.sh') }}-v1
+
+      - name: Build Cog via Docker
+        if: steps.cog-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p build/cog
+          scripts/build-cog.sh build/cog
+
+      - name: Upload Cog artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cog-arm64
+          path: build/cog/
+          retention-days: 7
+
+  build-rtl8189fs:
+    name: Build RTL8189FS WiFi Driver
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KERNEL_VER: 6.12.91-ophub
+      KERNEL_TARBALL: 6.12.91.tar.gz
+      NOCACHE: ${{ inputs.nocache || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq crossbuild-essential-arm64 bc bison flex libssl-dev
+
+      - name: Cache ophub kernel headers
+        id: kernel-cache
+        uses: actions/cache@v4
+        with:
+          path: build/kernel-headers
+          key: ophub-headers-${{ env.KERNEL_VER }}-v1
+
+      - name: Download kernel headers
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p build/kernel-headers
+          curl -fL --retry 5 \
+            "https://github.com/ophub/kernel/releases/download/kernel_stable/${KERNEL_TARBALL}" \
+            -o build/kernel-headers/kernel.tar.gz
+          mkdir -p build/kernel-headers/extracted
+          tar xzf build/kernel-headers/kernel.tar.gz -C build/kernel-headers/extracted
+          # Extract the boot tarball which contains the kernel + headers
+          for f in build/kernel-headers/extracted/boot-*.tar.gz; do
+            tar xzf "$f" -C build/kernel-headers/extracted/ || true
+          done
+          # Find and extract any header tarball
+          for f in build/kernel-headers/extracted/dt-*.tar.gz build/kernel-headers/extracted/*header*.tar.gz; do
+            tar xzf "$f" -C build/kernel-headers/extracted/ 2>/dev/null || true
+          done
+          ls -la build/kernel-headers/extracted/
+
+      - name: Prepare kernel build tree
+        run: |
+          # Find the kernel source/headers path
+          HEADER_DIR=$(find build/kernel-headers/extracted -name "Makefile" -path "*/usr/src/*" | head -1 | xargs dirname 2>/dev/null || echo "")
+          if [[ -z "$HEADER_DIR" ]]; then
+            echo "Headers not found in extracted tarball; trying alt layout..."
+            HEADER_DIR=$(find build/kernel-headers/extracted -name "Makefile" -path "*6.12*" | head -1 | xargs dirname 2>/dev/null || echo "")
+          fi
+          echo "HEADER_DIR=$HEADER_DIR"
+          echo "header_dir=$HEADER_DIR" >> "$GITHUB_ENV"
+
+      - name: Cache RTL8189FS source
+        id: rtl-cache
+        uses: actions/cache@v4
+        with:
+          path: build/rtl8189fs-source
+          key: rtl8189fs-awanservers-v1
+
+      - name: Clone RTL8189FS source
+        if: steps.rtl-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p build/rtl8189fs-source
+          git clone --depth=1 --branch=rtl8189fs \
+            https://github.com/awanservers/rtl8189ES_linux_Driver_Wifi_STB_HG680P.git \
+            build/rtl8189fs-source/awanservers-rtl8189fs
+
+      - name: Cross-compile RTL8189FS
+        run: |
+          SRC_DIR=$(find build/rtl8189fs-source -name "Makefile" -path "*8189*" | head -1 | xargs dirname)
+          echo "Building from: $SRC_DIR"
+          cd "$SRC_DIR"
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export KSRC="${{ env.header_dir }}"
+          make -j$(nproc) 2>&1 | tail -30
+          echo "Built module:"
+          find . -name "*.ko" -ls || true
+          mkdir -p "$GITHUB_WORKSPACE/build/wifi"
+          KO=$(find . -name "8189fs.ko" | head -1)
+          if [[ -n "$KO" ]]; then
+            cp "$KO" "$GITHUB_WORKSPACE/build/wifi/8189fs.ko"
+            aarch64-linux-gnu-modinfo "$GITHUB_WORKSPACE/build/wifi/8189fs.ko" | grep -E "name|alias|vermagic" || true
+          else
+            echo "ERROR: 8189fs.ko not found"
+            find . -name "*.ko" -ls
+            exit 1
+          fi
+        continue-on-error: true
+
+      - name: Upload RTL8189FS artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtl8189fs-driver
+          path: build/wifi/
+          retention-days: 7
+
   image:
     name: Customize Armbian Image (Model A)
     runs-on: ubuntu-latest
-    needs: rust-cross
+    needs: [rust-cross, build-cog, build-rtl8189fs]
+    continue-on-error: true
     timeout-minutes: 90
     env:
       BOARD: ${{ inputs.board || 'b860h' }}
@@ -118,6 +250,20 @@ jobs:
 
       - name: Make binaries executable
         run: chmod +x target/aarch64-unknown-linux-musl/release/*
+
+      - name: Download Cog artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cog-arm64
+          path: build/cog/
+        continue-on-error: true
+
+      - name: Download RTL8189FS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rtl8189fs-driver
+          path: build/wifi/
+        continue-on-error: true
 
       - name: Install host dependencies
         run: |

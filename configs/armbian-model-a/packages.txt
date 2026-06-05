@@ -15,5 +15,7 @@ python3
 xserver-xorg-core
 xinit
 x11-xserver-utils
-openbox
+xserver-xorg-input-libinput
+fonts-noto-color-emoji
 chromium
+surf
