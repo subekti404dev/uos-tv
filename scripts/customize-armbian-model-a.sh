@@ -128,16 +128,25 @@ if [[ -d "$PROJECT_DIR/luna" ]]; then
   sudo cp -r "$PROJECT_DIR/luna" "$ROOT_MNT/usr/share/uos/luna"
 fi
 
-# Browser launcher. Chromium-first with optimized flags for S905X.
-# Fallback to surf (WebKitGTK). Cog (WPE WebKit) preferred if prebuilt binary is present.
+# Browser launcher. Priority: Cog (WPE) > Surf (WebKitGTK) > Chromium.
+# Cog is lightest (DRM direct) but may not work on all DRM drivers.
+# Surf is ~40% lighter than Chromium and preferred fallback.
 sudo tee "$ROOT_MNT/usr/bin/uos-browser" >/dev/null <<'BROWSEREOF'
 #!/usr/bin/env bash
 set -euo pipefail
 URL="http://127.0.0.1:8080/index.html"
 
+# Best: Cog WPE (DRM direct, no X needed)
 if command -v cog >/dev/null 2>&1; then
   exec cog "$URL"
 fi
+
+# Good: Surf (WebKitGTK under X, ~40% lighter than Chromium)
+if command -v surf >/dev/null 2>&1; then
+  exec surf "${URL}"
+fi
+
+# Fallback: Chromium (heavy, full-featured)
 if command -v chromium >/dev/null 2>&1; then
   exec chromium \
     --no-sandbox \
@@ -163,9 +172,7 @@ if command -v chromium >/dev/null 2>&1; then
     --js-flags="--max-old-space-size=128" \
     "${URL}"
 fi
-if command -v surf >/dev/null 2>&1; then
-  exec surf "${URL}"
-fi
+
 echo "No browser runtime found." >&2
 while true; do sleep 3600; done
 BROWSEREOF
