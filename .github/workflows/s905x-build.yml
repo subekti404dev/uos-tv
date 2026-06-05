@@ -318,6 +318,7 @@ jobs:
           echo "Downloading Armbian kernel ${ARMB_VER}..."
           curl -sfL "$ARMB_URL" -o /tmp/armbian-kernel.tar.gz
           echo "Extracting..."
+          mkdir -p /tmp/armbian-extract
           tar xzf /tmp/armbian-kernel.tar.gz -C /tmp/armbian-extract
           cd /tmp/armbian-extract/${ARMB_VER}
           # Extract boot files (zImage, uInitrd, etc)
